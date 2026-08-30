@@ -1,0 +1,189 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans);
+  --font-heading: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) * 0.65);
+  --radius-md: calc(var(--radius) * 0.82);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.35);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --background: oklch(0.965 0.009 88);
+  --foreground: oklch(0.205 0.018 250);
+  --card: oklch(0.99 0.006 88);
+  --card-foreground: oklch(0.205 0.018 250);
+  --popover: oklch(0.99 0.006 88);
+  --popover-foreground: oklch(0.205 0.018 250);
+  --primary: oklch(0.64 0.16 48);
+  --primary-foreground: oklch(0.99 0.006 88);
+  --secondary: oklch(0.925 0.015 84);
+  --secondary-foreground: oklch(0.25 0.02 250);
+  --muted: oklch(0.93 0.01 88);
+  --muted-foreground: oklch(0.5 0.025 248);
+  --accent: oklch(0.9 0.035 82);
+  --accent-foreground: oklch(0.24 0.02 250);
+  --destructive: oklch(0.58 0.23 28);
+  --border: oklch(0.86 0.015 84);
+  --input: oklch(0.86 0.015 84);
+  --ring: oklch(0.64 0.16 48);
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: oklch(0.17 0.018 250);
+  --foreground: oklch(0.95 0.008 88);
+  --card: oklch(0.21 0.02 250);
+  --card-foreground: oklch(0.95 0.008 88);
+  --popover: oklch(0.21 0.02 250);
+  --popover-foreground: oklch(0.95 0.008 88);
+  --primary: oklch(0.72 0.15 58);
+  --primary-foreground: oklch(0.16 0.018 250);
+  --secondary: oklch(0.27 0.02 250);
+  --secondary-foreground: oklch(0.95 0.008 88);
+  --muted: oklch(0.27 0.02 250);
+  --muted-foreground: oklch(0.7 0.018 250);
+  --accent: oklch(0.32 0.03 250);
+  --accent-foreground: oklch(0.95 0.008 88);
+  --destructive: oklch(0.66 0.2 28);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.72 0.15 58);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { @apply h-full overflow-hidden bg-background font-sans antialiased; }
+  body { @apply h-full overflow-hidden bg-background text-foreground; }
+  button, a { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background; }
+}
+
+.eyebrow {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.primary-zone {
+  container-type: inline-size;
+}
+
+.secondary-zone {
+  container-type: inline-size;
+}
+
+.zone-surface {
+  color: var(--zone-fg);
+  background: var(--zone-bg);
+  border-color: var(--zone-border);
+  box-shadow: inset 0 1px var(--zone-highlight), 0 14px 36px var(--zone-shadow);
+  transition: color 500ms ease, background 500ms ease, border-color 500ms ease;
+}
+
+.zone-surface-day {
+  --zone-fg: #18303d;
+  --zone-muted: rgb(24 48 61 / 60%);
+  --zone-subtle: rgb(24 48 61 / 45%);
+  --zone-border: rgb(40 76 88 / 15%);
+  --zone-control-bg: rgb(255 255 255 / 28%);
+  --zone-control-hover: rgb(255 255 255 / 48%);
+  --zone-highlight: rgb(255 255 255 / 65%);
+  --zone-shadow: rgb(43 75 84 / 10%);
+  --zone-bg:
+    radial-gradient(circle at 80% 16%, rgb(255 222 150 / 72%), transparent 34%),
+    linear-gradient(145deg, #f4ebcf 0%, #d6e6e2 55%, #bfd9df 100%);
+}
+
+.zone-surface-night {
+  --zone-fg: #f7f4ec;
+  --zone-muted: rgb(247 244 236 / 60%);
+  --zone-subtle: rgb(247 244 236 / 42%);
+  --zone-border: rgb(255 255 255 / 14%);
+  --zone-control-bg: rgb(255 255 255 / 8%);
+  --zone-control-hover: rgb(255 255 255 / 14%);
+  --zone-highlight: rgb(255 255 255 / 10%);
+  --zone-shadow: rgb(15 31 43 / 20%);
+  --zone-bg:
+    radial-gradient(circle at 80% 18%, rgb(163 187 211 / 13%), transparent 30%),
+    linear-gradient(145deg, #17293c 0%, #203e50 58%, #2b4a59 100%);
+}
+
+.zone-muted { color: var(--zone-muted); }
+.zone-subtle { color: var(--zone-subtle); }
+.zone-divider { border-color: var(--zone-border); }
+.zone-control {
+  color: var(--zone-muted);
+  border-color: var(--zone-border);
+  background: var(--zone-control-bg);
+}
+.zone-control:hover { color: var(--zone-fg); background: var(--zone-control-hover); }
+
+.zone-board {
+  --zone-gap: clamp(0.45rem, 1vw, 0.9rem);
+  --primary-size: min(calc(100vw - 2rem), calc(74dvh - 3.7rem));
+  --secondary-size: calc((var(--primary-size) - 2 * var(--zone-gap)) / 3);
+  display: grid;
+  grid-template-columns: var(--primary-size);
+  grid-template-rows: var(--primary-size) var(--secondary-size);
+  gap: var(--zone-gap);
+  width: var(--primary-size);
+  height: calc(var(--primary-size) + var(--zone-gap) + var(--secondary-size));
+}
+
+.zone-primary,
+.zone-secondary-item {
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.zone-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--secondary-size));
+  grid-template-rows: var(--secondary-size);
+  gap: var(--zone-gap);
+}
+
+@media (min-width: 768px) {
+  .zone-board {
+    --primary-size: min(calc(100dvh - 5rem), calc(74vw - 3.7rem));
+    grid-template-columns: var(--primary-size) var(--secondary-size);
+    grid-template-rows: var(--primary-size);
+    width: calc(var(--primary-size) + var(--zone-gap) + var(--secondary-size));
+    height: var(--primary-size);
+  }
+
+  .zone-secondary-grid {
+    grid-template-columns: var(--secondary-size);
+    grid-template-rows: repeat(3, var(--secondary-size));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
