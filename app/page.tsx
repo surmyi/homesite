@@ -342,7 +342,7 @@ function PrimaryZone({ city, now, refreshToken, onEdit }: { city: City | null; n
         <div className="zone-divider grid grid-cols-4 gap-[clamp(0.35rem,2cqi,1rem)] border-t pt-[clamp(0.65rem,3cqi,1.25rem)] text-[clamp(0.6rem,2cqi,0.875rem)]">
           <div className="flex items-center gap-2.5"><Sunrise className="size-4 text-amber-500" /><span><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Sunrise</small><strong className="font-medium">{weather ? shortSolarTime(weather.sunrise) : '—:—'}</strong></span></div>
           <div className="flex items-center gap-2.5"><Sunset className="size-4 text-orange-400" /><span><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Sunset</small><strong className="font-medium">{weather ? shortSolarTime(weather.sunset) : '—:—'}</strong></span></div>
-          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">High / low</small><strong className="block font-medium">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°F` : '— / —'}</strong><span className="zone-muted block">{weather ? `${celsius(weather.high)}° / ${celsius(weather.low)}°C` : '— / —'}</span></div>
+          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Low / high</small><strong className="block font-medium">{weather ? `${Math.round(weather.low)}° / ${Math.round(weather.high)}°F` : '— / —'}</strong><span className="zone-muted block">{weather ? `${celsius(weather.low)}° / ${celsius(weather.high)}°C` : '— / —'}</span></div>
           <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Feels like</small><strong className="block font-medium">{weather ? `${Math.round(weather.apparentTemperature)}°F` : '—'}</strong><span className="zone-muted block">{weather ? `${celsius(weather.apparentTemperature)}°C` : '—'}</span></div>
         </div>
       </div>
@@ -386,9 +386,9 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
       <div className="zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
         <span className="flex items-center gap-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
         <span className="flex items-center justify-end gap-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
-        <span className="col-span-2 grid grid-cols-2 items-baseline whitespace-nowrap text-center" aria-label="High and low temperatures">
-          <strong className="zone-divider truncate border-r pr-1 font-medium">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°F` : '— / —'}</strong>
-          <span className="zone-subtle truncate pl-1">{weather ? `${celsius(weather.high)}° / ${celsius(weather.low)}°C` : '— / —'}</span>
+        <span className="col-span-2 grid grid-cols-2 items-baseline whitespace-nowrap text-center" aria-label="Low and high temperatures">
+          <strong className="zone-divider truncate border-r pr-1 font-medium">{weather ? `${Math.round(weather.low)}° / ${Math.round(weather.high)}°F` : '— / —'}</strong>
+          <span className="zone-subtle truncate pl-1">{weather ? `${celsius(weather.low)}° / ${celsius(weather.high)}°C` : '— / —'}</span>
         </span>
       </div>
     </article>
