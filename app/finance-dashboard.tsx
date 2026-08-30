@@ -44,6 +44,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { firstComparisonDate, type ComparisonPeriod } from '@/lib/finance-comparison';
+import {
+  firstHistoryDates,
+  historyDateRange,
+  type HistoryCadence,
+  type HistoryRangePreset,
+} from '@/lib/finance-history';
 
 type FinanceValue = {
   balance: number | null;
@@ -88,7 +94,7 @@ type FinanceDashboardResponse = {
 };
 
 type FinanceView = 'overview' | 'history';
-type ChartCadence = 'daily' | 'monthly' | 'annual';
+type ChartCadence = HistoryCadence;
 
 const COMPARISON_PERIODS: Array<{ id: ComparisonPeriod; label: string }> = [
   { id: 'dd', label: 'D/D' },
@@ -437,6 +443,13 @@ type HistoryPoint = {
 };
 
 const HISTORY_PAGE_SIZES = [5, 10, 20];
+const HISTORY_RANGE_OPTIONS: Array<{ id: HistoryRangePreset; label: string }> = [
+  { id: '30d', label: 'Last 30 days' },
+  { id: '90d', label: 'Last 90 days' },
+  { id: '1y', label: 'Last 1 year' },
+  { id: 'all', label: 'All dates' },
+  { id: 'custom', label: 'Custom' },
+];
 const MOBILE_HISTORY_QUERY = '(max-width: 767px)';
 
 function subscribeToMobileHistory(listener: () => void) {
@@ -539,12 +552,13 @@ function buildPeriodSeries(
   to: string,
 ) {
   if (!from || !to || from > to) return [];
-  const reportByPeriod = new Map<string, string>();
-  for (const date of [...dates].sort()) {
-    if (group !== 'all' && observedAccounts(data, date, group).size === 0) continue;
-    const periodKey = historyPeriodKey(date, cadence);
-    if (!reportByPeriod.has(periodKey)) reportByPeriod.set(periodKey, date);
-  }
+  const reportByPeriod = new Map(
+    firstHistoryDates(
+      dates,
+      cadence,
+      (date) => group === 'all' || observedAccounts(data, date, group).size > 0,
+    ).map((date) => [historyPeriodKey(date, cadence), date]),
+  );
 
   const startSource = new Date(`${from}T00:00:00Z`);
   const endSource = new Date(`${to}T00:00:00Z`);
@@ -617,6 +631,8 @@ function HistoryTrend({
   dates,
   from,
   to,
+  cadence,
+  onCadenceChange,
 }: {
   data: FinanceDashboardResponse;
   selectedGroup: string;
@@ -625,8 +641,9 @@ function HistoryTrend({
   dates: string[];
   from: string;
   to: string;
+  cadence: ChartCadence;
+  onCadenceChange: (cadence: ChartCadence) => void;
 }) {
-  const [cadence, setCadence] = useState<ChartCadence>('daily');
   const series = useMemo(
     () => buildPeriodSeries(data, selectedGroup, debt, dates, cadence, from, to),
     [data, selectedGroup, debt, dates, cadence, from, to],
@@ -694,7 +711,7 @@ function HistoryTrend({
               key={item}
               type="button"
               aria-pressed={cadence === item}
-              onClick={() => setCadence(item)}
+              onClick={() => onCadenceChange(item)}
               className={`min-h-11 rounded-lg px-3 text-xs font-semibold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${cadence === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
               {item === 'daily' ? 'Daily' : item === 'monthly' ? 'Monthly' : 'Annual'}
@@ -891,9 +908,10 @@ function HistoryWorkspace({
 }) {
   const [page, setPage] = useState(0);
   const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
-  const [fromOverride, setFromOverride] = useState<string | null>(null);
-  const [toOverride, setToOverride] = useState<string | null>(null);
-  const [rangeOpen, setRangeOpen] = useState(false);
+  const [cadence, setCadence] = useState<ChartCadence>('daily');
+  const [rangePreset, setRangePreset] = useState<HistoryRangePreset>('30d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [draftFrom, setDraftFrom] = useState('');
   const [draftTo, setDraftTo] = useState('');
   const isMobile = useSyncExternalStore(subscribeToMobileHistory, mobileHistorySnapshot, () => false);
@@ -902,21 +920,35 @@ function HistoryWorkspace({
   const safeGroup = selectedGroup === 'all' || selectedColumn ? selectedGroup : 'all';
   const selectedName = safeGroup === 'all' ? 'Tracked balance' : titleCase(selectedColumn?.name ?? safeGroup);
   const selectedKind = data.categories.find((category) => category.summaryGroup === safeGroup)?.balanceKind ?? 'asset';
-  const minDate = data.dates[0] ?? '';
-  const maxDate = data.dates.at(-1) ?? '';
-  const from = fromOverride ?? minDate;
-  const to = toOverride ?? maxDate;
+  const { from: minDate, to: maxDate } = historyDateRange(data.dates, 'all');
+  const { from, to } = historyDateRange(data.dates, rangePreset, { from: customFrom, to: customTo });
   const filteredDates = useMemo(
     () => data.dates.filter((date) => date >= from && date <= to),
     [data.dates, from, to],
   );
-  const descendingDates = useMemo(() => [...filteredDates].sort((left, right) => right.localeCompare(left)), [filteredDates]);
+  const snapshotDates = useMemo(
+    () => cadence === 'daily'
+      ? filteredDates
+      : firstHistoryDates(
+        filteredDates,
+        cadence,
+        (date) => safeGroup === 'all' || observedAccounts(data, date, safeGroup).size > 0,
+      ),
+    [cadence, data, filteredDates, safeGroup],
+  );
+  const descendingDates = useMemo(() => [...snapshotDates].sort((left, right) => right.localeCompare(left)), [snapshotDates]);
   const pageCount = Math.ceil(descendingDates.length / pageSize);
   const safePage = pageCount === 0 ? 0 : Math.min(page, pageCount - 1);
   const firstIndex = safePage * pageSize;
   const visibleDates = descendingDates.slice(firstIndex, firstIndex + pageSize);
-  const draftRangeInvalid = Boolean(draftFrom && draftTo && draftFrom > draftTo);
-  const fullRange = from === minDate && to === maxDate;
+  const draftRangeInvalid = Boolean(
+    draftFrom
+    && draftTo
+    && (draftFrom > draftTo || draftFrom < minDate || draftTo > maxDate),
+  );
+  const snapshotDescription = cadence === 'daily'
+    ? 'Exact balances, newest first'
+    : `First available snapshot in each ${cadence === 'monthly' ? 'month' : 'year'}, newest first`;
 
   function changeGroup(group: string | null) {
     if (!group) return;
@@ -930,31 +962,30 @@ function HistoryWorkspace({
     setPage(0);
   }
 
-  function toggleRange() {
-    const nextOpen = !rangeOpen;
-    if (nextOpen) {
+  function changeCadence(nextCadence: ChartCadence) {
+    setCadence(nextCadence);
+    setPage(0);
+  }
+
+  function changeRangePreset(value: string | null) {
+    const nextPreset = HISTORY_RANGE_OPTIONS.find((option) => option.id === value)?.id;
+    if (!nextPreset) return;
+    if (nextPreset === 'custom') {
       setDraftFrom(from);
       setDraftTo(to);
+      setCustomFrom(from);
+      setCustomTo(to);
     }
-    setRangeOpen(nextOpen);
+    setRangePreset(nextPreset);
+    setPage(0);
   }
 
   function applyRange(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draftFrom || !draftTo || draftRangeInvalid) return;
-    setFromOverride(draftFrom === minDate ? null : draftFrom);
-    setToOverride(draftTo === maxDate ? null : draftTo);
+    setCustomFrom(draftFrom);
+    setCustomTo(draftTo);
     setPage(0);
-    setRangeOpen(false);
-  }
-
-  function resetRange() {
-    setFromOverride(null);
-    setToOverride(null);
-    setDraftFrom(minDate);
-    setDraftTo(maxDate);
-    setPage(0);
-    setRangeOpen(false);
   }
 
   return (
@@ -973,42 +1004,46 @@ function HistoryWorkspace({
           </Select>
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Date range</p>
-          <Button type="button" variant="outline" aria-expanded={rangeOpen} aria-controls="history-date-range" onClick={toggleRange} className="min-h-11 rounded-xl bg-card px-3">
-            <CalendarRange aria-hidden="true" />
-            {fullRange ? 'All dates' : `${formatReportDate(from, true)} – ${formatReportDate(to, true)}`}
-          </Button>
+          <label htmlFor="history-date-range-preset" className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Date range</label>
+          <Select value={rangePreset} onValueChange={changeRangePreset}>
+            <SelectTrigger id="history-date-range-preset" className="h-11 min-w-44 rounded-xl bg-card px-3">
+              <CalendarRange aria-hidden="true" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {HISTORY_RANGE_OPTIONS.map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {rangeOpen && (
-        <form id="history-date-range" onSubmit={applyRange} className="mb-3 rounded-[1rem] border border-border bg-card p-3 shadow-[0_8px_24px_rgb(43_75_84/0.05)]">
+      {rangePreset === 'custom' && (
+        <form id="history-custom-date-range" aria-label="Custom date range" onSubmit={applyRange} className="mb-3 rounded-[1rem] border border-border bg-card p-3 shadow-[0_8px_24px_rgb(43_75_84/0.05)]">
           <div className="grid grid-cols-2 gap-2.5">
             <label htmlFor="history-date-from" className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               From
-              <Input id="history-date-from" type="date" required min={minDate} max={draftTo || maxDate} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} aria-invalid={draftRangeInvalid || undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+              <Input id="history-date-from" type="date" required min={minDate} max={draftTo || maxDate} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
             </label>
             <label htmlFor="history-date-to" className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               To
-              <Input id="history-date-to" type="date" required min={draftFrom || minDate} max={maxDate} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} aria-invalid={draftRangeInvalid || undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+              <Input id="history-date-to" type="date" required min={draftFrom || minDate} max={maxDate} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
             </label>
           </div>
-          {draftRangeInvalid && <p role="alert" className="mt-2 text-xs text-destructive">From must be on or before To.</p>}
+          {draftRangeInvalid && <p id="history-date-range-error" role="alert" className="mt-2 text-xs text-destructive">Choose a valid range within the available report dates.</p>}
           <div className="mt-3 flex items-center justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={resetRange} className="min-h-11 sm:min-h-9">All dates</Button>
             <Button type="submit" disabled={draftRangeInvalid || !draftFrom || !draftTo} className="min-h-11 px-4 sm:min-h-9">Apply</Button>
           </div>
         </form>
       )}
 
-      <HistoryTrend data={data} selectedGroup={safeGroup} selectedName={selectedName} debt={selectedKind === 'debt'} dates={filteredDates} from={from} to={to} />
+      <HistoryTrend data={data} selectedGroup={safeGroup} selectedName={selectedName} debt={selectedKind === 'debt'} dates={filteredDates} from={from} to={to} cadence={cadence} onCadenceChange={changeCadence} />
 
       <div className="mb-2 mt-4 flex items-center justify-between gap-4 sm:mt-5">
         <div>
           <h2 className="font-heading text-sm font-semibold sm:text-base">Reported snapshots</h2>
-          <p className="text-[10px] text-muted-foreground sm:text-xs">Exact balances, newest first</p>
+          <p className="text-[10px] text-muted-foreground sm:text-xs">{snapshotDescription}</p>
         </div>
-        <p className="text-[10px] text-muted-foreground sm:text-xs">{descendingDates.length === 0 ? '0 reports' : `${firstIndex + 1}–${Math.min(firstIndex + pageSize, descendingDates.length)} of ${descendingDates.length}`}</p>
+        <p aria-live="polite" className="text-[10px] text-muted-foreground sm:text-xs">{descendingDates.length === 0 ? '0 reports' : `${firstIndex + 1}–${Math.min(firstIndex + pageSize, descendingDates.length)} of ${descendingDates.length}`}</p>
       </div>
 
       {visibleDates.length > 0 ? (

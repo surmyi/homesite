@@ -11,7 +11,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",
-    "test:finance": "node --test tests/finance-comparison.test.mjs",
+    "test:finance": "node --test tests/finance-*.test.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
