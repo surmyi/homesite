@@ -6,6 +6,14 @@ export type HistoryDateRange = {
   to: string;
 };
 
+export function defaultHistoryRange(
+  cadence: HistoryCadence,
+): HistoryRangePreset {
+  if (cadence === 'monthly') return '1y';
+  if (cadence === 'annual') return 'all';
+  return '30d';
+}
+
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }

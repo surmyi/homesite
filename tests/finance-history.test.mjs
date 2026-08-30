@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { firstHistoryDates, historyDateRange } from '../lib/finance-history.ts';
+import {
+  defaultHistoryRange,
+  firstHistoryDates,
+  historyDateRange,
+} from '../lib/finance-history.ts';
+
+test('each chart cadence has a useful default date range', () => {
+  assert.equal(defaultHistoryRange('daily'), '30d');
+  assert.equal(defaultHistoryRange('monthly'), '1y');
+  assert.equal(defaultHistoryRange('annual'), 'all');
+});
 
 test('monthly snapshots keep the first qualifying report in each month', () => {
   assert.deepEqual(

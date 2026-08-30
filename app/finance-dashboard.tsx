@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/table';
 import { firstComparisonDate, type ComparisonPeriod } from '@/lib/finance-comparison';
 import {
+  defaultHistoryRange,
   firstHistoryDates,
   historyDateRange,
   type HistoryCadence,
@@ -258,7 +259,7 @@ function CategoryCard({
   const visual = GROUP_VISUALS[id] ?? FALLBACK_VISUAL;
   const Icon = visual.icon;
   return (
-    <button type="button" onClick={onExplore} aria-label={`Explore ${name} history`} className="group flex min-h-[108px] flex-col justify-between rounded-[1.15rem] border border-border bg-card p-3.5 text-left shadow-[0_8px_24px_rgb(43_75_84/0.045)] transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[122px] sm:p-4">
+    <button type="button" onClick={onExplore} aria-label={`Open ${name} details`} className="group flex min-h-[108px] flex-col justify-between rounded-[1.15rem] border border-border bg-card p-3.5 text-left shadow-[0_8px_24px_rgb(43_75_84/0.045)] transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[122px] sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <span className={`grid size-8 shrink-0 place-items-center rounded-xl ${visual.wash}`}><Icon className="size-4" aria-hidden="true" /></span>
         <span className="text-[9px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">{kind === 'debt' ? 'Amount owed' : `${Math.round(share)}% of assets`}</span>
@@ -293,7 +294,7 @@ function FinanceHeader({
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             <WalletCards className="size-3.5" aria-hidden="true" /> Finance · Personal
           </div>
-          <h1 className="mt-1 font-heading text-[clamp(1.35rem,4vw,2.05rem)] font-semibold tracking-[-0.05em]">{view === 'overview' ? 'Current position' : 'History'}</h1>
+          <h1 className="mt-1 font-heading text-[clamp(1.35rem,4vw,2.05rem)] font-semibold tracking-[-0.05em]">{view === 'overview' ? 'Current position' : 'Details'}</h1>
         </div>
         <div className="shrink-0 text-right">
           <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Report date</p>
@@ -305,7 +306,7 @@ function FinanceHeader({
           <LayoutDashboard aria-hidden="true" /> Overview
         </Button>
         <Button type="button" size="sm" variant={view === 'history' ? 'default' : 'ghost'} aria-pressed={view === 'history'} onClick={() => onViewChange('history')} className="min-h-11 rounded-lg px-3 sm:min-h-8">
-          <History aria-hidden="true" /> History
+          <History aria-hidden="true" /> Details
         </Button>
       </div>
     </div>
@@ -400,7 +401,7 @@ function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplo
           <h2 className="font-heading text-sm font-semibold tracking-[-0.02em] sm:text-base">Category breakdown</h2>
           <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">{groups.some((group) => group.value === null) ? 'An unavailable category is withheld from aggregate totals.' : `${latestAccounts.size} accounts reported.`}</p>
         </div>
-        <p className="hidden text-[10px] text-muted-foreground sm:block">Exact cents remain available in History</p>
+        <p className="hidden text-[10px] text-muted-foreground sm:block">Exact cents remain available in Details</p>
       </div>
 
       <section className="grid grid-cols-2 gap-2.5 lg:grid-cols-4 lg:gap-3" aria-label="Latest balances by category">
@@ -963,7 +964,9 @@ function HistoryWorkspace({
   }
 
   function changeCadence(nextCadence: ChartCadence) {
+    if (nextCadence === cadence) return;
     setCadence(nextCadence);
+    setRangePreset(defaultHistoryRange(nextCadence));
     setPage(0);
   }
 
@@ -1091,7 +1094,13 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
   const [selectedGroup, setSelectedGroup] = useState('all');
 
   useEffect(() => {
-    const syncView = () => setView(window.location.hash === '#finance/history' ? 'history' : 'overview');
+    const syncView = () => {
+      const detailsView = window.location.hash === '#finance/details' || window.location.hash === '#finance/history';
+      setView(detailsView ? 'history' : 'overview');
+      if (window.location.hash === '#finance/history') {
+        window.history.replaceState(null, '', '#finance/details');
+      }
+    };
     syncView();
     window.addEventListener('hashchange', syncView);
     return () => window.removeEventListener('hashchange', syncView);
@@ -1117,7 +1126,7 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
 
   function changeView(nextView: FinanceView) {
     setView(nextView);
-    window.history.replaceState(null, '', nextView === 'overview' ? '#finance' : '#finance/history');
+    window.history.replaceState(null, '', nextView === 'overview' ? '#finance' : '#finance/details');
   }
 
   function exploreGroup(group: string) {
