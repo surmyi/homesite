@@ -348,54 +348,69 @@ export async function POST(request: Request) {
 
   const snapshotId = crypto.randomUUID();
   const now = new Date().toISOString();
-  await db.batch([
-    db.prepare(
-      `UPDATE finance_snapshots SET is_current = 0
-       WHERE portfolio_id = ? AND report_date = ? AND is_current = 1`,
-    ).bind(DEFAULT_PORTFOLIO_ID, parsed.report_date),
-    db.prepare(
-      `INSERT INTO finance_snapshots
-       (id, portfolio_id, report_date, source, source_ref, source_hash, raw_json, is_current, warning_json, ingested_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    ).bind(
-      snapshotId,
-      DEFAULT_PORTFOLIO_ID,
-      parsed.report_date,
-      request.headers.get('x-finance-source')?.slice(0, 120) || 'auto-finance',
-      request.headers.get('x-finance-source-ref')?.slice(0, 300) || null,
-      sourceHash,
-      rawJson,
-      warnings.length ? JSON.stringify(warnings) : null,
-      now,
-    ),
-    ...resolved.map(({ accountId, categoryId, incoming }) => db.prepare(
-      `INSERT INTO finance_observations
-       (snapshot_id, account_id, category_id, balance_cents, ok, error_type,
-        reported_institution, reported_account, reported_type, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      snapshotId,
-      accountId,
-      categoryId,
-      safeBalanceCents(incoming.balance),
-      incoming.ok ? 1 : 0,
-      incoming.error_type,
-      incoming.institution.trim(),
-      incoming.account.trim(),
-      incoming.type.trim(),
-      now,
-    )),
-    db.prepare(
-      `INSERT INTO finance_audit_log
-       (portfolio_id, actor, action, entity_type, entity_id, before_json, after_json, created_at)
-       VALUES (?, 'automation', 'ingest', 'snapshot', ?, NULL, ?, ?)`,
-    ).bind(
-      DEFAULT_PORTFOLIO_ID,
-      snapshotId,
-      JSON.stringify({ reportDate: parsed.report_date, accountCount: resolved.length, sourceHash }),
-      now,
-    ),
-  ]);
+  try {
+    await db.batch([
+      db.prepare(
+        `UPDATE finance_snapshots SET is_current = 0
+         WHERE portfolio_id = ? AND report_date = ? AND is_current = 1`,
+      ).bind(DEFAULT_PORTFOLIO_ID, parsed.report_date),
+      db.prepare(
+        `INSERT INTO finance_snapshots
+         (id, portfolio_id, report_date, source, source_ref, source_hash, raw_json, is_current, warning_json, ingested_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      ).bind(
+        snapshotId,
+        DEFAULT_PORTFOLIO_ID,
+        parsed.report_date,
+        request.headers.get('x-finance-source')?.slice(0, 120) || 'auto-finance',
+        request.headers.get('x-finance-source-ref')?.slice(0, 300) || null,
+        sourceHash,
+        rawJson,
+        warnings.length ? JSON.stringify(warnings) : null,
+        now,
+      ),
+      ...resolved.map(({ accountId, categoryId, incoming }) => db.prepare(
+        `INSERT INTO finance_observations
+         (snapshot_id, account_id, category_id, balance_cents, ok, error_type,
+          reported_institution, reported_account, reported_type, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        snapshotId,
+        accountId,
+        categoryId,
+        safeBalanceCents(incoming.balance),
+        incoming.ok ? 1 : 0,
+        incoming.error_type,
+        incoming.institution.trim(),
+        incoming.account.trim(),
+        incoming.type.trim(),
+        now,
+      )),
+      db.prepare(
+        `INSERT INTO finance_audit_log
+         (portfolio_id, actor, action, entity_type, entity_id, before_json, after_json, created_at)
+         VALUES (?, 'automation', 'ingest', 'snapshot', ?, NULL, ?, ?)`,
+      ).bind(
+        DEFAULT_PORTFOLIO_ID,
+        snapshotId,
+        JSON.stringify({ reportDate: parsed.report_date, accountCount: resolved.length, sourceHash }),
+        now,
+      ),
+    ]);
+  } catch (error) {
+    const concurrent = await db.prepare(
+      'SELECT id, report_date FROM finance_snapshots WHERE source_hash = ?',
+    ).bind(sourceHash).first<{ id: string; report_date: string }>();
+    if (concurrent) {
+      return Response.json({
+        ok: true,
+        idempotent: true,
+        snapshotId: concurrent.id,
+        reportDate: concurrent.report_date,
+      });
+    }
+    throw error;
+  }
 
   return Response.json({
     ok: true,
