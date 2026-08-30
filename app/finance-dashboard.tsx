@@ -27,6 +27,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -86,6 +87,15 @@ type FinanceDashboardResponse = {
 };
 
 type FinanceView = 'overview' | 'history';
+type ComparisonPeriod = 'dd' | 'mm' | 'yy' | 'ytd';
+type ChartCadence = 'monthly' | 'annual';
+
+const COMPARISON_PERIODS: Array<{ id: ComparisonPeriod; label: string }> = [
+  { id: 'dd', label: 'D/D' },
+  { id: 'mm', label: 'M/M' },
+  { id: 'yy', label: 'Y/Y' },
+  { id: 'ytd', label: 'YTD' },
+];
 
 const GROUP_VISUALS: Record<string, { icon: LucideIcon; accent: string; wash: string }> = {
   cash: { icon: Banknote, accent: 'bg-emerald-500', wash: 'bg-emerald-500/10 text-emerald-700' },
@@ -133,11 +143,53 @@ function formatReportDate(value: string | null, compact = false) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function comparisonTargetDate(latestDate: string | undefined, period: ComparisonPeriod) {
+  if (!latestDate) return null;
+  const latest = new Date(`${latestDate}T00:00:00Z`);
+  if (period === 'dd') {
+    latest.setUTCDate(latest.getUTCDate() - 1);
+    return isoDate(latest);
+  }
+  if (period === 'ytd') return `${latest.getUTCFullYear() - 1}-12-31`;
+
+  const targetYear = latest.getUTCFullYear() - (period === 'yy' ? 1 : 0);
+  const targetMonth = latest.getUTCMonth() - (period === 'mm' ? 1 : 0);
+  const monthStart = new Date(Date.UTC(targetYear, targetMonth, 1));
+  const lastDay = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
+  return isoDate(new Date(Date.UTC(
+    monthStart.getUTCFullYear(),
+    monthStart.getUTCMonth(),
+    Math.min(latest.getUTCDate(), lastDay),
+  )));
+}
+
+function comparisonDate(data: FinanceDashboardResponse, latestDate: string | undefined, period: ComparisonPeriod) {
+  const target = comparisonTargetDate(latestDate, period);
+  return target && data.dates.includes(target) ? target : null;
+}
+
 function observedAccounts(data: FinanceDashboardResponse, date: string | undefined, group?: string) {
   if (!date) return new Set<string>();
   const ids = new Set<string>();
   for (const category of data.categories) {
     if (group && category.summaryGroup !== group) continue;
+    const row = category.rows.find((item) => item.date === date);
+    for (const account of category.accounts) {
+      if (row?.values[account.id]) ids.add(account.id);
+    }
+  }
+  return ids;
+}
+
+function observedAccountsByKind(data: FinanceDashboardResponse, date: string | undefined, kind: 'asset' | 'debt') {
+  if (!date) return new Set<string>();
+  const ids = new Set<string>();
+  for (const category of data.categories) {
+    if (category.balanceKind !== kind) continue;
     const row = category.rows.find((item) => item.date === date);
     for (const account of category.accounts) {
       if (row?.values[account.id]) ids.add(account.id);
@@ -171,11 +223,11 @@ function aggregateGroupValue(data: FinanceDashboardResponse, date: string | unde
 }
 
 function Delta({ value, dark = false }: { value: number | null; dark?: boolean }) {
-  if (value === null) return <span className={dark ? 'text-white/55' : 'text-muted-foreground'}>No like-for-like comparison</span>;
+  if (value === null) return <span className={dark ? 'text-white/55' : 'text-muted-foreground'}>N/A</span>;
   const Icon = value >= 0 ? TrendingUp : TrendingDown;
   return (
     <span className={`inline-flex items-center gap-1 ${dark ? 'text-white/70' : 'text-muted-foreground'}`}>
-      <Icon className="size-3" aria-hidden="true" /> {value >= 0 ? '+' : ''}{formatCurrency(value)} since previous report
+      <Icon className="size-3" aria-hidden="true" /> {value >= 0 ? '+' : ''}{formatCurrency(value)}
     </span>
   );
 }
@@ -239,7 +291,7 @@ function CategoryCard({
         <p className="line-clamp-2 break-words text-xs font-medium leading-snug text-muted-foreground sm:text-sm">{name}</p>
         <div className="mt-1 flex items-end justify-between gap-2">
           <p className="truncate font-heading text-lg font-semibold tracking-[-0.04em] tabular-nums sm:text-xl">{formatCurrency(value, false, kind === 'debt')}</p>
-          {delta !== null && <span className="mb-0.5 shrink-0 text-[10px] font-medium text-muted-foreground">{delta >= 0 ? '+' : ''}{formatCurrency(delta)}</span>}
+          <span className="mb-0.5 shrink-0 text-[10px] font-medium text-muted-foreground">{delta === null ? 'N/A' : `${delta >= 0 ? '+' : ''}${formatCurrency(delta)}`}</span>
         </div>
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
           <div className={`h-full rounded-full ${visual.accent}`} style={{ width: `${Math.max(value === null ? 0 : 4, Math.min(100, share))}%` }} />
@@ -285,28 +337,37 @@ function FinanceHeader({
 }
 
 function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplore: (group: string) => void }) {
+  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>('dd');
   const latest = data.summary.rows.at(-1) ?? null;
-  const previous = data.summary.rows.at(-2) ?? null;
+  const baselineDate = comparisonDate(data, latest?.date, comparisonPeriod);
   const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
   const latestAccounts = observedAccounts(data, latest?.date);
-  const previousAccounts = observedAccounts(data, previous?.date);
-  const comparablePortfolio = sameSet(latestAccounts, previousAccounts);
+  const baselineAccounts = observedAccounts(data, baselineDate ?? undefined);
+  const comparablePortfolio = baselineDate !== null && sameSet(latestAccounts, baselineAccounts);
+  const comparableAssets = baselineDate !== null && sameSet(
+    observedAccountsByKind(data, latest?.date, 'asset'),
+    observedAccountsByKind(data, baselineDate, 'asset'),
+  );
+  const comparableDebt = baselineDate !== null && sameSet(
+    observedAccountsByKind(data, latest?.date, 'debt'),
+    observedAccountsByKind(data, baselineDate, 'debt'),
+  );
 
   const groups = data.summary.columns.map((column) => {
     const value = numericValue(aggregateGroupValue(data, latest?.date, column.id));
-    const previousValue = numericValue(aggregateGroupValue(data, previous?.date, column.id));
+    const baselineValue = numericValue(aggregateGroupValue(data, baselineDate ?? undefined, column.id));
     const comparableGroup = sameSet(
       observedAccounts(data, latest?.date, column.id),
-      observedAccounts(data, previous?.date, column.id),
+      observedAccounts(data, baselineDate ?? undefined, column.id),
     );
     const kind = kindByGroup.get(column.id) ?? 'asset';
     return {
       ...column,
       kind,
       value,
-      previousValue,
-      delta: comparableGroup && value !== null && previousValue !== null
-        ? value - previousValue
+      baselineValue,
+      delta: baselineDate !== null && comparableGroup && value !== null && baselineValue !== null
+        ? value - baselineValue
         : null,
     } as const;
   });
@@ -319,34 +380,50 @@ function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplo
   const debtOwed = debtGroups.every((group) => group.value !== null)
     ? debtGroups.reduce((sum, group) => sum + (group.value ?? 0), 0)
     : null;
-  const previousAssets = assetGroups.every((group) => group.previousValue !== null)
-    ? assetGroups.reduce((sum, group) => sum + (group.previousValue ?? 0), 0)
+  const baselineAssets = assetGroups.every((group) => group.baselineValue !== null)
+    ? assetGroups.reduce((sum, group) => sum + (group.baselineValue ?? 0), 0)
     : null;
-  const previousDebtOwed = debtGroups.every((group) => group.previousValue !== null)
-    ? debtGroups.reduce((sum, group) => sum + (group.previousValue ?? 0), 0)
+  const baselineDebtOwed = debtGroups.every((group) => group.baselineValue !== null)
+    ? debtGroups.reduce((sum, group) => sum + (group.baselineValue ?? 0), 0)
     : null;
   const trackedBalance = assets !== null && debtOwed !== null ? assets - debtOwed : null;
-  const previousTrackedBalance = previousAssets !== null && previousDebtOwed !== null ? previousAssets - previousDebtOwed : null;
-  const aggregateComparable = comparablePortfolio && previous && trackedBalance !== null && previousTrackedBalance !== null;
+  const baselineTrackedBalance = baselineAssets !== null && baselineDebtOwed !== null ? baselineAssets - baselineDebtOwed : null;
+  const aggregateComparable = comparablePortfolio && comparableAssets && comparableDebt && trackedBalance !== null && baselineTrackedBalance !== null;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-0.5 [scrollbar-width:thin]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Difference</p>
+        <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Balance comparison period">
+          {COMPARISON_PERIODS.map((period) => (
+            <button
+              key={period.id}
+              type="button"
+              aria-pressed={comparisonPeriod === period.id}
+              onClick={() => setComparisonPeriod(period.id)}
+              className={`min-h-11 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${comparisonPeriod === period.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <section className="grid grid-cols-2 gap-2.5 lg:grid-cols-4 lg:gap-3" aria-label="Latest tracked totals">
         <MetricCard
           label="Tracked balance"
           value={trackedBalance}
-          delta={aggregateComparable ? trackedBalance - previousTrackedBalance : null}
+          delta={aggregateComparable ? trackedBalance - baselineTrackedBalance : null}
           primary
           note="Recorded assets less recorded liabilities; not a net-worth estimate."
         />
-        <MetricCard label="Tracked assets" value={assets} delta={comparablePortfolio && previous && assets !== null && previousAssets !== null ? assets - previousAssets : null} />
-        <MetricCard label="Debt owed" value={debtOwed} delta={comparablePortfolio && previous && debtOwed !== null && previousDebtOwed !== null ? debtOwed - previousDebtOwed : null} />
+        <MetricCard label="Tracked assets" value={assets} delta={comparableAssets && assets !== null && baselineAssets !== null ? assets - baselineAssets : null} />
+        <MetricCard label="Debt owed" value={debtOwed} delta={comparableDebt && debtOwed !== null && baselineDebtOwed !== null ? debtOwed - baselineDebtOwed : null} />
       </section>
 
       <div className="mb-2 mt-4 flex items-end justify-between gap-3 sm:mt-5">
         <div>
           <h2 className="font-heading text-sm font-semibold tracking-[-0.02em] sm:text-base">Category breakdown</h2>
-          <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">{groups.some((group) => group.value === null) ? 'An unavailable category is withheld from aggregate totals.' : `${latestAccounts.size} accounts reported · balance change since ${formatReportDate(previous?.date ?? null, true)}.`}</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">{groups.some((group) => group.value === null) ? 'An unavailable category is withheld from aggregate totals.' : `${latestAccounts.size} accounts reported.`}</p>
         </div>
         <p className="hidden text-[10px] text-muted-foreground sm:block">Exact cents remain available in History</p>
       </div>
@@ -380,9 +457,13 @@ type HistoryAccount = FinanceAccount & {
 };
 
 type HistoryPoint = {
-  date: string;
+  key: string;
+  label: string;
+  date: string | null;
   value: number | null;
   reported: boolean;
+  coverageKey: string | null;
+  coverageBreak: boolean;
 };
 
 const HISTORY_PAGE_SIZES = [5, 10, 20];
@@ -447,20 +528,80 @@ function accountMeta(account: HistoryAccount) {
     .join(' · ');
 }
 
-function buildDailySeries(data: FinanceDashboardResponse, group: string, debt: boolean) {
-  if (data.dates.length === 0) return [];
-  const byDate = new Map(data.summary.rows.map((row) => {
-    const value = valueForGroup(data, row, group);
-    return [row.date, value === null || !debt ? value : Math.abs(value)];
-  }));
-  const start = new Date(`${data.dates[0]}T00:00:00Z`);
-  const end = new Date(`${data.dates.at(-1)}T00:00:00Z`);
-  const points: HistoryPoint[] = [];
-  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-    const date = cursor.toISOString().slice(0, 10);
-    points.push({ date, value: byDate.get(date) ?? null, reported: byDate.has(date) });
+function coverageSignature(data: FinanceDashboardResponse, date: string, group: string) {
+  const entries = new Set<string>();
+  for (const category of data.categories) {
+    if (group !== 'all' && category.summaryGroup !== group) continue;
+    const row = category.rows.find((item) => item.date === date);
+    for (const account of category.accounts) {
+      if (row?.values[account.id]) entries.add(`${account.id}:${category.balanceKind}`);
+    }
   }
-  return points;
+  return Array.from(entries).sort().join('|');
+}
+
+function historyPeriodKey(date: string, cadence: ChartCadence) {
+  return cadence === 'monthly' ? date.slice(0, 7) : date.slice(0, 4);
+}
+
+function historyPeriodLabel(key: string, cadence: ChartCadence) {
+  if (cadence === 'annual') return key;
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' })
+    .format(new Date(`${key}-01T00:00:00Z`));
+}
+
+function buildPeriodSeries(
+  data: FinanceDashboardResponse,
+  group: string,
+  debt: boolean,
+  dates: string[],
+  cadence: ChartCadence,
+  from: string,
+  to: string,
+) {
+  if (!from || !to || from > to) return [];
+  const reportByPeriod = new Map<string, string>();
+  for (const date of [...dates].sort()) {
+    if (group !== 'all' && observedAccounts(data, date, group).size === 0) continue;
+    reportByPeriod.set(historyPeriodKey(date, cadence), date);
+  }
+
+  const startSource = new Date(`${from}T00:00:00Z`);
+  const endSource = new Date(`${to}T00:00:00Z`);
+  const start = cadence === 'monthly'
+    ? new Date(Date.UTC(startSource.getUTCFullYear(), startSource.getUTCMonth(), 1))
+    : new Date(Date.UTC(startSource.getUTCFullYear(), 0, 1));
+  const end = cadence === 'monthly'
+    ? new Date(Date.UTC(endSource.getUTCFullYear(), endSource.getUTCMonth(), 1))
+    : new Date(Date.UTC(endSource.getUTCFullYear(), 0, 1));
+  const points: HistoryPoint[] = [];
+  for (const cursor = new Date(start); cursor <= end;) {
+    const key = cadence === 'monthly'
+      ? `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
+      : String(cursor.getUTCFullYear());
+    const date = reportByPeriod.get(key) ?? null;
+    const row = date ? data.summary.rows.find((item) => item.date === date) : undefined;
+    const rawValue = valueForGroup(data, row, group);
+    const value = rawValue === null || !debt ? rawValue : Math.abs(rawValue);
+    points.push({
+      key,
+      label: historyPeriodLabel(key, cadence),
+      date,
+      value,
+      reported: date !== null,
+      coverageKey: date ? coverageSignature(data, date, group) : null,
+      coverageBreak: false,
+    });
+    if (cadence === 'monthly') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    else cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
+  }
+  let previousCoverage: string | null = null;
+  return points.map((point) => {
+    if (!point.reported || !point.coverageKey) return point;
+    const coverageBreak = previousCoverage !== null && previousCoverage !== point.coverageKey;
+    previousCoverage = point.coverageKey;
+    return coverageBreak && point.value !== null ? { ...point, value: null, coverageBreak: true } : point;
+  });
 }
 
 function compactCurrency(value: number) {
@@ -472,39 +613,45 @@ function compactCurrency(value: number) {
   }).format(value);
 }
 
-function shortDate(value: string) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })
-    .format(new Date(`${value}T00:00:00Z`));
-}
-
 function HistoryTrend({
   data,
   selectedGroup,
   selectedName,
   debt,
+  dates,
+  from,
+  to,
 }: {
   data: FinanceDashboardResponse;
   selectedGroup: string;
   selectedName: string;
   debt: boolean;
+  dates: string[];
+  from: string;
+  to: string;
 }) {
-  const series = useMemo(() => buildDailySeries(data, selectedGroup, debt), [data, selectedGroup, debt]);
-  const latestRow = data.summary.rows.at(-1);
-  const previousRow = data.summary.rows.at(-2);
-  const latestRaw = valueForGroup(data, latestRow, selectedGroup);
-  const previousRaw = valueForGroup(data, previousRow, selectedGroup);
-  const latestValue = latestRaw === null || !debt ? latestRaw : Math.abs(latestRaw);
-  const previousValue = previousRaw === null || !debt ? previousRaw : Math.abs(previousRaw);
-  const comparable = sameSet(
-    observedAccounts(data, latestRow?.date, selectedGroup === 'all' ? undefined : selectedGroup),
-    observedAccounts(data, previousRow?.date, selectedGroup === 'all' ? undefined : selectedGroup),
+  const [cadence, setCadence] = useState<ChartCadence>('monthly');
+  const series = useMemo(
+    () => buildPeriodSeries(data, selectedGroup, debt, dates, cadence, from, to),
+    [data, selectedGroup, debt, dates, cadence, from, to],
   );
-  const delta = comparable && latestValue !== null && previousValue !== null ? latestValue - previousValue : null;
+  const relevantDates = useMemo(
+    () => selectedGroup === 'all' ? dates : dates.filter((date) => observedAccounts(data, date, selectedGroup).size > 0),
+    [data, dates, selectedGroup],
+  );
+  const latestDate = relevantDates.at(-1) ?? null;
+  const latestRow = latestDate ? data.summary.rows.find((row) => row.date === latestDate) : undefined;
+  const latestRaw = valueForGroup(data, latestRow, selectedGroup);
+  const latestValue = latestRaw === null || !debt ? latestRaw : Math.abs(latestRaw);
   const gapCount = series.filter((point) => !point.reported).length;
+  const coverageBreakCount = series.filter((point) => point.coverageBreak).length;
+  const unavailableCount = series.filter((point) => point.reported && point.value === null && !point.coverageBreak).length;
   const reportCount = series.length - gapCount;
+  const plottedCount = series.filter((point) => point.value !== null).length;
   const chartConfig = {
     value: { label: selectedName, color: '#2e7484' },
   } satisfies ChartConfig;
+  const unit = cadence === 'monthly' ? 'month' : 'year';
 
   return (
     <section className="rounded-[1.25rem] border border-border bg-card p-4 shadow-[0_10px_30px_rgb(43_75_84/0.06)] sm:p-5" aria-labelledby="history-trend-title">
@@ -514,52 +661,85 @@ function HistoryTrend({
             <span className="grid size-8 place-items-center rounded-xl bg-primary/10 text-primary"><ChartNoAxesCombined className="size-4" aria-hidden="true" /></span>
             <div>
               <h2 id="history-trend-title" className="font-heading text-sm font-semibold sm:text-base">{selectedName} over time</h2>
-              <p className="text-[10px] text-muted-foreground sm:text-xs">{reportCount} reports across {series.length} calendar days</p>
+              <p className="text-[10px] text-muted-foreground sm:text-xs">Last reported balance in each {unit}</p>
             </div>
           </div>
         </div>
         <div className="text-right">
-          <p className="font-heading text-xl font-semibold tracking-[-0.04em] tabular-nums sm:text-2xl">{formatCurrency(latestValue)}</p>
-          <p className="mt-1 text-[10px] sm:text-xs"><Delta value={delta} /></p>
+          <p className="font-heading text-xl font-semibold tracking-[-0.04em] tabular-nums sm:text-2xl">{latestValue === null ? 'N/A' : formatCurrency(latestValue)}</p>
+          <p className="mt-1 text-[10px] text-muted-foreground sm:text-xs">{latestDate ? `As of ${formatReportDate(latestDate, true)}` : 'No reports in range'}</p>
         </div>
       </div>
 
-      <ChartContainer config={chartConfig} className="mt-3 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} balance history`}>
-        <AreaChart
-          data={series}
-          accessibilityLayer
-          title={`${selectedName} balance history`}
-          desc={`${reportCount} reported balances across ${series.length} calendar days, with ${gapCount} unreported days shown as gaps.`}
-          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-        >
-          <defs>
-            <linearGradient id="finance-history-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.28} />
-              <stop offset="95%" stopColor="var(--color-value)" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid vertical={false} strokeDasharray="3 5" />
-          <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={32} tickFormatter={shortDate} />
-          <YAxis tickLine={false} axisLine={false} width={54} tickFormatter={compactCurrency} />
-          <ChartTooltip
-            cursor={{ stroke: 'var(--border)' }}
-            content={({ active, payload }) => {
-              const point = payload?.[0]?.payload as HistoryPoint | undefined;
-              if (!active || !point || point.value === null) return null;
-              return (
-                <div className="min-w-36 rounded-xl border border-border bg-popover px-3 py-2 text-popover-foreground shadow-xl">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{formatReportDate(point.date, true)}</p>
-                  <p className="mt-1 font-mono text-sm font-semibold tabular-nums">{formatCurrency(point.value, true)}</p>
-                </div>
-              );
-            }}
-          />
-          <Area dataKey="value" type="monotone" stroke="var(--color-value)" strokeWidth={2.25} fill="url(#finance-history-fill)" connectNulls={false} activeDot={{ r: 4 }} />
-        </AreaChart>
-      </ChartContainer>
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">Chart interval</p>
+        <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Chart interval">
+          {(['monthly', 'annual'] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={cadence === item}
+              onClick={() => setCadence(item)}
+              className={`min-h-11 rounded-lg px-3 text-xs font-semibold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${cadence === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {item === 'monthly' ? 'Monthly' : 'Annual'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {plottedCount > 0 ? (
+        <ChartContainer config={chartConfig} className="mt-2 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} ${cadence} balance history`}>
+          <AreaChart
+            data={series}
+            accessibilityLayer
+            title={`${selectedName} ${cadence} balance history`}
+            desc={`${reportCount} reported ${reportCount === 1 ? unit : `${unit}s`} across ${series.length} periods, with ${gapCount} empty periods and ${coverageBreakCount} coverage changes shown as gaps.`}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="finance-history-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="var(--color-value)" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} />
+            <YAxis tickLine={false} axisLine={false} width={54} tickFormatter={compactCurrency} />
+            <ChartTooltip
+              cursor={{ stroke: 'var(--border)' }}
+              content={({ active, payload }) => {
+                const point = payload?.[0]?.payload as HistoryPoint | undefined;
+                if (!active || !point || point.value === null) return null;
+                return (
+                  <div className="min-w-40 rounded-xl border border-border bg-popover px-3 py-2 text-popover-foreground shadow-xl">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{point.label}</p>
+                    <p className="mt-1 font-mono text-sm font-semibold tabular-nums">{formatCurrency(point.value, true)}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">As of {formatReportDate(point.date, true)}</p>
+                  </div>
+                );
+              }}
+            />
+            <Area dataKey="value" type="monotone" stroke="var(--color-value)" strokeWidth={2.25} fill="url(#finance-history-fill)" connectNulls={false} dot={plottedCount <= 24 ? { r: 3 } : false} activeDot={{ r: 4 }} />
+          </AreaChart>
+        </ChartContainer>
+      ) : (
+        <div className="mt-2 grid h-[180px] place-items-center rounded-xl bg-muted/45 px-6 text-center sm:h-[210px]">
+          <div>
+            <CalendarRange className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-2 text-sm font-medium">No reported balance in this range</p>
+            <p className="mt-1 text-xs text-muted-foreground">Adjust the dates or choose another category.</p>
+          </div>
+        </div>
+      )}
       <div className="mt-1 flex items-center justify-between gap-4 text-[10px] text-muted-foreground sm:text-xs">
-        <p>{gapCount === 0 ? 'Every calendar day is represented.' : `${gapCount} unreported ${gapCount === 1 ? 'day' : 'days'} shown as gaps.`}</p>
-        <p className="hidden sm:block">Changes describe recorded balances, not investment returns.</p>
+        <p>{plottedCount === 0
+          ? (reportCount === 0 ? 'No reports in the selected period.' : 'No usable balance in the selected period.')
+          : (gapCount === 0 ? `Every ${unit} has a report.` : `${gapCount} ${gapCount === 1 ? unit : `${unit}s`} without a report shown as gaps.`)}</p>
+        <div className="flex items-center gap-3">
+          {coverageBreakCount > 0 && <p>{coverageBreakCount} coverage {coverageBreakCount === 1 ? 'change' : 'changes'}</p>}
+          {unavailableCount > 0 && <p>{unavailableCount} unavailable</p>}
+        </div>
       </div>
     </section>
   );
@@ -682,17 +862,32 @@ function HistoryWorkspace({
 }) {
   const [page, setPage] = useState(0);
   const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
+  const [fromOverride, setFromOverride] = useState<string | null>(null);
+  const [toOverride, setToOverride] = useState<string | null>(null);
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
   const isMobile = useSyncExternalStore(subscribeToMobileHistory, mobileHistorySnapshot, () => false);
   const pageSize = pageSizeOverride ?? (isMobile ? 5 : 10);
   const selectedColumn = data.summary.columns.find((column) => column.id === selectedGroup);
   const safeGroup = selectedGroup === 'all' || selectedColumn ? selectedGroup : 'all';
   const selectedName = safeGroup === 'all' ? 'Tracked balance' : titleCase(selectedColumn?.name ?? safeGroup);
   const selectedKind = data.categories.find((category) => category.summaryGroup === safeGroup)?.balanceKind ?? 'asset';
-  const descendingDates = useMemo(() => [...data.dates].sort((left, right) => right.localeCompare(left)), [data.dates]);
-  const pageCount = Math.max(1, Math.ceil(descendingDates.length / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
+  const minDate = data.dates[0] ?? '';
+  const maxDate = data.dates.at(-1) ?? '';
+  const from = fromOverride ?? minDate;
+  const to = toOverride ?? maxDate;
+  const filteredDates = useMemo(
+    () => data.dates.filter((date) => date >= from && date <= to),
+    [data.dates, from, to],
+  );
+  const descendingDates = useMemo(() => [...filteredDates].sort((left, right) => right.localeCompare(left)), [filteredDates]);
+  const pageCount = Math.ceil(descendingDates.length / pageSize);
+  const safePage = pageCount === 0 ? 0 : Math.min(page, pageCount - 1);
   const firstIndex = safePage * pageSize;
   const visibleDates = descendingDates.slice(firstIndex, firstIndex + pageSize);
+  const draftRangeInvalid = Boolean(draftFrom && draftTo && draftFrom > draftTo);
+  const fullRange = from === minDate && to === maxDate;
 
   function changeGroup(group: string | null) {
     if (!group) return;
@@ -704,6 +899,33 @@ function HistoryWorkspace({
     if (!value) return;
     setPageSizeOverride(Number(value));
     setPage(0);
+  }
+
+  function toggleRange() {
+    const nextOpen = !rangeOpen;
+    if (nextOpen) {
+      setDraftFrom(from);
+      setDraftTo(to);
+    }
+    setRangeOpen(nextOpen);
+  }
+
+  function applyRange(event: React.SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draftFrom || !draftTo || draftRangeInvalid) return;
+    setFromOverride(draftFrom === minDate ? null : draftFrom);
+    setToOverride(draftTo === maxDate ? null : draftTo);
+    setPage(0);
+    setRangeOpen(false);
+  }
+
+  function resetRange() {
+    setFromOverride(null);
+    setToOverride(null);
+    setDraftFrom(minDate);
+    setDraftTo(maxDate);
+    setPage(0);
+    setRangeOpen(false);
   }
 
   return (
@@ -721,39 +943,79 @@ function HistoryWorkspace({
             </SelectContent>
           </Select>
         </div>
-        <p className="max-w-sm text-[10px] leading-relaxed text-muted-foreground sm:text-right sm:text-xs">Choose a category to see its combined trend and the accounts behind each report.</p>
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Date range</p>
+          <Button type="button" variant="outline" aria-expanded={rangeOpen} aria-controls="history-date-range" onClick={toggleRange} className="min-h-11 rounded-xl bg-card px-3">
+            <CalendarRange aria-hidden="true" />
+            {fullRange ? 'All dates' : `${formatReportDate(from, true)} – ${formatReportDate(to, true)}`}
+          </Button>
+        </div>
       </div>
 
-      <HistoryTrend data={data} selectedGroup={safeGroup} selectedName={selectedName} debt={selectedKind === 'debt'} />
+      {rangeOpen && (
+        <form id="history-date-range" onSubmit={applyRange} className="mb-3 rounded-[1rem] border border-border bg-card p-3 shadow-[0_8px_24px_rgb(43_75_84/0.05)]">
+          <div className="grid grid-cols-2 gap-2.5">
+            <label htmlFor="history-date-from" className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              From
+              <Input id="history-date-from" type="date" required min={minDate} max={draftTo || maxDate} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} aria-invalid={draftRangeInvalid || undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+            </label>
+            <label htmlFor="history-date-to" className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              To
+              <Input id="history-date-to" type="date" required min={draftFrom || minDate} max={maxDate} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} aria-invalid={draftRangeInvalid || undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+            </label>
+          </div>
+          {draftRangeInvalid && <p role="alert" className="mt-2 text-xs text-destructive">From must be on or before To.</p>}
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={resetRange} className="min-h-11 sm:min-h-9">All dates</Button>
+            <Button type="submit" disabled={draftRangeInvalid || !draftFrom || !draftTo} className="min-h-11 px-4 sm:min-h-9">Apply</Button>
+          </div>
+        </form>
+      )}
+
+      <HistoryTrend data={data} selectedGroup={safeGroup} selectedName={selectedName} debt={selectedKind === 'debt'} dates={filteredDates} from={from} to={to} />
 
       <div className="mb-2 mt-4 flex items-center justify-between gap-4 sm:mt-5">
         <div>
           <h2 className="font-heading text-sm font-semibold sm:text-base">Reported snapshots</h2>
           <p className="text-[10px] text-muted-foreground sm:text-xs">Exact balances, newest first</p>
         </div>
-        <p className="text-[10px] text-muted-foreground sm:text-xs">{firstIndex + 1}–{Math.min(firstIndex + pageSize, descendingDates.length)} of {descendingDates.length}</p>
+        <p className="text-[10px] text-muted-foreground sm:text-xs">{descendingDates.length === 0 ? '0 reports' : `${firstIndex + 1}–${Math.min(firstIndex + pageSize, descendingDates.length)} of ${descendingDates.length}`}</p>
       </div>
 
-      <HistoryTable data={data} selectedGroup={safeGroup} selectedName={selectedName} dates={visibleDates} />
-      <MobileHistoryList data={data} selectedGroup={safeGroup} dates={visibleDates} />
+      {visibleDates.length > 0 ? (
+        <>
+          <HistoryTable data={data} selectedGroup={safeGroup} selectedName={selectedName} dates={visibleDates} />
+          <MobileHistoryList data={data} selectedGroup={safeGroup} dates={visibleDates} />
+        </>
+      ) : (
+        <section className="grid min-h-40 place-items-center rounded-[1.2rem] border border-dashed border-border bg-card/55 px-6 text-center" aria-label="No snapshots in selected range">
+          <div>
+            <CalendarRange className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-2 text-sm font-medium">No snapshots in this range</p>
+            <p className="mt-1 text-xs text-muted-foreground">Choose a wider date range to see reported balances.</p>
+          </div>
+        </section>
+      )}
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/60 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground sm:text-xs">Reports per page</span>
-          <Select value={String(pageSize)} onValueChange={changePageSize}>
-            <SelectTrigger aria-label="Reports per page" size="sm" className="min-h-11 w-16 bg-card sm:min-h-9"><SelectValue /></SelectTrigger>
-            <SelectContent align="start">
-              {HISTORY_PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}
-            </SelectContent>
-          </Select>
+      {descendingDates.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/60 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground sm:text-xs">Reports per page</span>
+            <Select value={String(pageSize)} onValueChange={changePageSize}>
+              <SelectTrigger aria-label="Reports per page" size="sm" className="min-h-11 w-16 bg-card sm:min-h-9"><SelectValue /></SelectTrigger>
+              <SelectContent align="start">
+                {HISTORY_PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button type="button" variant="outline" size="sm" disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="min-h-11 rounded-lg sm:min-h-9"><ChevronLeft aria-hidden="true" /> Newer</Button>
+            <span className="min-w-16 text-center text-[10px] text-muted-foreground sm:text-xs">{safePage + 1} / {pageCount}</span>
+            <Button type="button" variant="outline" size="sm" disabled={safePage >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} className="min-h-11 rounded-lg sm:min-h-9">Older <ChevronRight aria-hidden="true" /></Button>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Button type="button" variant="outline" size="sm" disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="min-h-11 rounded-lg sm:min-h-9"><ChevronLeft aria-hidden="true" /> Newer</Button>
-          <span className="min-w-16 text-center text-[10px] text-muted-foreground sm:text-xs">{safePage + 1} / {pageCount}</span>
-          <Button type="button" variant="outline" size="sm" disabled={safePage >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} className="min-h-11 rounded-lg sm:min-h-9">Older <ChevronRight aria-hidden="true" /></Button>
-        </div>
-      </div>
-      <p className="pt-2 text-[10px] text-muted-foreground">Unavailable means a report was received without a usable balance. Missing dates remain visible as chart gaps.</p>
+      )}
+      <p className="pt-2 text-[10px] text-muted-foreground">Unavailable means a report was received without a usable balance. Months or years without snapshots remain visible as chart gaps.</p>
     </div>
   );
 }
