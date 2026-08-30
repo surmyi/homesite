@@ -384,8 +384,8 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
       </div>
       <p className="zone-muted truncate text-[clamp(0.48rem,5.5cqi,0.75rem)]">{weather ? weatherLabel(weather.weatherCode) : city.country}</p>
       <div className="zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
-        <span className="flex items-center gap-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
-        <span className="flex items-center justify-end gap-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
+        <span className="zone-divider flex items-center justify-center gap-1 border-r pr-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
+        <span className="flex items-center justify-center gap-1 pl-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
         <span className="col-span-2 grid grid-cols-2 items-baseline whitespace-nowrap text-center" aria-label="Low and high temperatures">
           <strong className="zone-divider truncate border-r pr-1 font-medium">{weather ? `${Math.round(weather.low)}° / ${Math.round(weather.high)}°F` : '— / —'}</strong>
           <span className="zone-subtle truncate pl-1">{weather ? `${celsius(weather.low)}° / ${celsius(weather.high)}°C` : '— / —'}</span>
