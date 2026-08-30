@@ -294,7 +294,7 @@ function EmptyZone({ primary, onEdit }: { primary?: boolean; onEdit: () => void 
       <span className="grid size-11 place-items-center rounded-full border border-border bg-card text-muted-foreground transition-colors group-hover:text-primary">
         <Plus className="size-4" />
       </span>
-      <strong className="mt-3 font-heading text-sm font-medium sm:text-base">{primary ? 'Choose a primary place' : 'Add a place'}</strong>
+      <strong className="mt-3 font-heading text-sm font-medium sm:text-base">Add a place</strong>
       {primary && <span className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">Search any city to bring this zone to life.</span>}
     </button>
   );
@@ -307,6 +307,9 @@ function PrimaryZone({ city, now, refreshToken, onEdit }: { city: City | null; n
 
   return (
     <article className={`zone-surface primary-zone relative aspect-square h-full overflow-hidden rounded-[clamp(1.25rem,3vw,2rem)] p-[clamp(1.25rem,4cqi,2.25rem)] ${daylight ? 'zone-surface-day' : 'zone-surface-night'}`}>
+      <button className="absolute inset-0 z-20 sm:hidden" onClick={onEdit} aria-label={`Change ${city.name}`}>
+        <span className="sr-only">Change {city.name}</span>
+      </button>
       <div className="relative z-10 flex h-full min-h-0 flex-col justify-between">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -314,7 +317,7 @@ function PrimaryZone({ city, now, refreshToken, onEdit }: { city: City | null; n
             <p className="zone-muted mt-1 text-[clamp(0.68rem,2cqi,0.875rem)]">{formatTileDate(now, city.timezone)}</p>
             <p className="zone-subtle mt-0.5 text-[clamp(0.6rem,1.8cqi,0.75rem)]">{city.admin1 ? `${city.admin1}, ` : ''}{city.country}</p>
           </div>
-          <button onClick={onEdit} className="zone-control flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium backdrop-blur transition-colors" aria-label="Change primary city">
+          <button onClick={onEdit} className="zone-control hidden items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium backdrop-blur transition-colors sm:flex" aria-label="Change primary city">
             <Settings2 className="size-3.5" /> Change
           </button>
         </div>
@@ -356,15 +359,18 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
   const daylight = isDaylight(now, city.timezone, weather);
 
   return (
-    <article className={`zone-surface secondary-zone flex aspect-square h-full min-h-0 flex-col justify-between overflow-hidden rounded-[clamp(0.8rem,2vw,1.5rem)] border p-[clamp(0.5rem,6cqi,1.35rem)] ${daylight ? 'zone-surface-day' : 'zone-surface-night'}`}>
-      <div className="flex items-start justify-between gap-1">
+    <article className={`zone-surface secondary-zone relative flex aspect-square h-full min-h-0 flex-col justify-between overflow-hidden rounded-[clamp(0.8rem,2vw,1.5rem)] border p-[clamp(0.5rem,6cqi,1.35rem)] ${daylight ? 'zone-surface-day' : 'zone-surface-night'}`}>
+      <button className="absolute inset-0 z-20 sm:hidden" onClick={onEdit} aria-label={`Change ${city.name}`}>
+        <span className="sr-only">Change {city.name}</span>
+      </button>
+      <div className="secondary-header flex items-start justify-between gap-1">
         <div className="min-w-0">
-          <h2 className="truncate font-heading text-[clamp(0.72rem,8cqi,1.25rem)] font-medium tracking-[-0.035em]">{city.name}</h2>
-          <p className="zone-muted mt-0.5 truncate text-[clamp(0.46rem,5cqi,0.7rem)]">{formatTileDate(now, city.timezone, true)}</p>
+          <h2 className="secondary-city-name font-heading text-[clamp(0.72rem,8cqi,1.25rem)] font-medium tracking-[-0.035em]">{city.name}</h2>
+          <p className="zone-muted mt-0.5 whitespace-nowrap text-[clamp(0.46rem,5cqi,0.7rem)]">{formatTileDate(now, city.timezone, true)}</p>
         </div>
-        <button onClick={onEdit} aria-label={`Change ${city.name}`} className="zone-control grid size-[clamp(1.25rem,14cqi,2rem)] shrink-0 place-items-center rounded-full border transition-colors"><Settings2 className="size-[clamp(0.65rem,7cqi,0.875rem)]" /></button>
+        <button onClick={onEdit} aria-label={`Change ${city.name}`} className="zone-control hidden size-[clamp(1.25rem,14cqi,2rem)] shrink-0 place-items-center rounded-full border transition-colors sm:grid"><Settings2 className="size-[clamp(0.65rem,7cqi,0.875rem)]" /></button>
       </div>
-      <div className="flex items-end justify-between gap-1">
+      <div className="secondary-reading flex items-end justify-between gap-1">
         <div>
           <p className="font-heading text-[clamp(1.2rem,18cqi,3rem)] font-light leading-none tracking-[-0.07em]">{formatClock(now, city.timezone)}</p>
         </div>
@@ -382,8 +388,8 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
           )}
         </div>
       </div>
-      <p className="zone-muted truncate text-[clamp(0.48rem,5.5cqi,0.75rem)]">{weather ? weatherLabel(weather.weatherCode) : city.country}</p>
-      <div className="zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
+      <p className="secondary-condition zone-muted text-[clamp(0.48rem,5.5cqi,0.75rem)]">{weather ? weatherLabel(weather.weatherCode) : city.country}</p>
+      <div className="secondary-metrics zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
         <span className="zone-divider flex items-center justify-center gap-1 border-r pr-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
         <span className="flex items-center justify-center gap-1 pl-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
         <span className="col-span-2 grid grid-cols-2 items-baseline whitespace-nowrap text-center" aria-label="Low and high temperatures">
@@ -395,7 +401,7 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
   );
 }
 
-function CityPicker({ open, current, primary, onOpenChange, onSelect }: { open: boolean; current: City | null; primary: boolean; onOpenChange: (open: boolean) => void; onSelect: (city: City | null) => void }) {
+function CityPicker({ open, current, onOpenChange, onSelect }: { open: boolean; current: City | null; onOpenChange: (open: boolean) => void; onSelect: (city: City | null) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<City[]>([]);
   const [loading, setLoading] = useState(false);
@@ -465,7 +471,7 @@ function CityPicker({ open, current, primary, onOpenChange, onSelect }: { open: 
       <DialogContent className="max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-[1.5rem] p-0 sm:max-w-lg">
         <DialogHeader className="border-b border-border p-6 pb-5">
           <DialogTitle className="font-heading text-xl tracking-[-0.03em]">{current ? `Change ${current.name}` : 'Add a place'}</DialogTitle>
-          <DialogDescription>{primary ? 'This place anchors your Today page.' : 'Choose a city for this space, or leave it open.'}</DialogDescription>
+          <DialogDescription>Choose a city for this space, or leave it open.</DialogDescription>
           <div className="relative pt-2">
             <Search className="absolute left-3 top-[1.05rem] size-4 text-muted-foreground" />
             <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search city or postal code" className="h-11 rounded-xl bg-background pl-9 pr-9" />
@@ -574,7 +580,6 @@ export default function Home() {
       <CityPicker
         open={editingIndex !== null}
         current={editingIndex === null ? null : cities[editingIndex]}
-        primary={editingIndex === 0}
         onOpenChange={(open) => { if (!open) setEditingIndex(null); }}
         onSelect={(city) => { if (editingIndex !== null) void updateCity(editingIndex, city); }}
       />

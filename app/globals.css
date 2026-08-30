@@ -169,6 +169,47 @@
   gap: var(--zone-gap);
 }
 
+.secondary-city-name,
+.secondary-condition {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .secondary-zone {
+    border-radius: clamp(0.9rem, 5vw, 1.35rem);
+    padding: clamp(0.45rem, 5.5cqi, 0.7rem);
+    box-shadow: inset 0 1px var(--zone-highlight), 0 6px 18px var(--zone-shadow);
+  }
+
+  .secondary-header {
+    min-height: 31cqi;
+  }
+
+  .secondary-city-name {
+    display: block;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.05;
+  }
+
+  .secondary-reading {
+    min-height: 27cqi;
+  }
+
+  .secondary-condition {
+    display: none;
+  }
+
+  .secondary-metrics {
+    gap: 0.12rem;
+    padding-top: clamp(0.2rem, 3cqi, 0.4rem);
+  }
+}
+
 @media (min-width: 768px) {
   .zone-board {
     --primary-size: min(calc(100dvh - 5rem), calc(74vw - 3.7rem));
