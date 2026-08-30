@@ -195,6 +195,10 @@ function shortSolarTime(value: string) {
   return time?.slice(0, 5) ?? '—:—';
 }
 
+function celsius(fahrenheit: number) {
+  return Math.round((fahrenheit - 32) * 5 / 9);
+}
+
 function minutesFromSolarTime(value: string) {
   const time = value.split('T')[1]?.slice(0, 5);
   if (!time) return null;
@@ -324,7 +328,8 @@ function PrimaryZone({ city, now, refreshToken, onEdit }: { city: City | null; n
               {weather && status === 'ready' && (
                 <>
                   <WeatherIcon code={weather.weatherCode} isDay={weather.isDay} className="ml-auto mb-3 size-9 text-amber-200" />
-                  <p className="font-heading text-[clamp(1.7rem,5cqi,2.5rem)] font-medium tracking-[-0.05em]">{Math.round(weather.temperature)}°</p>
+                  <p className="font-heading text-[clamp(1.7rem,5cqi,2.5rem)] font-medium leading-none tracking-[-0.05em]">{celsius(weather.temperature)}°C</p>
+                  <p className="zone-muted mt-1 text-[clamp(0.7rem,2cqi,0.9rem)]">{Math.round(weather.temperature)}°F</p>
                   <p className="zone-muted mt-1 max-w-28 truncate text-[clamp(0.65rem,2cqi,0.875rem)]">{weatherLabel(weather.weatherCode)}</p>
                 </>
               )}
@@ -337,8 +342,8 @@ function PrimaryZone({ city, now, refreshToken, onEdit }: { city: City | null; n
         <div className="zone-divider grid grid-cols-4 gap-[clamp(0.35rem,2cqi,1rem)] border-t pt-[clamp(0.65rem,3cqi,1.25rem)] text-[clamp(0.6rem,2cqi,0.875rem)]">
           <div className="flex items-center gap-2.5"><Sunrise className="size-4 text-amber-500" /><span><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Sunrise</small><strong className="font-medium">{weather ? shortSolarTime(weather.sunrise) : '—:—'}</strong></span></div>
           <div className="flex items-center gap-2.5"><Sunset className="size-4 text-orange-400" /><span><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Sunset</small><strong className="font-medium">{weather ? shortSolarTime(weather.sunset) : '—:—'}</strong></span></div>
-          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">High / low</small><strong className="font-medium">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°` : '— / —'}</strong></div>
-          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Feels like</small><strong className="font-medium">{weather ? `${Math.round(weather.apparentTemperature)}°` : '—'}</strong></div>
+          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">High / low</small><strong className="block font-medium">{weather ? `${celsius(weather.high)}° / ${celsius(weather.low)}°C` : '— / —'}</strong><span className="zone-muted">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°F` : '— / —'}</span></div>
+          <div><small className="zone-subtle block text-[10px] uppercase tracking-[0.12em]">Feels like</small><strong className="block font-medium">{weather ? `${celsius(weather.apparentTemperature)}°C` : '—'}</strong><span className="zone-muted">{weather ? `${Math.round(weather.apparentTemperature)}°F` : '—'}</span></div>
         </div>
       </div>
     </article>
@@ -369,7 +374,8 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
           {weather && status === 'ready' && (
             <>
               <WeatherIcon code={weather.weatherCode} isDay={weather.isDay} className="ml-auto mb-0.5 size-[clamp(0.75rem,9cqi,1.25rem)] text-primary" />
-              <p className="text-[clamp(0.8rem,10cqi,1.25rem)] font-medium leading-none">{Math.round(weather.temperature)}°</p>
+              <p className="text-[clamp(0.7rem,8cqi,1.1rem)] font-medium leading-none">{celsius(weather.temperature)}°C</p>
+              <p className="zone-muted mt-0.5 text-[clamp(0.48rem,5cqi,0.68rem)]">{Math.round(weather.temperature)}°F</p>
             </>
           )}
         </div>
@@ -378,6 +384,7 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
       <div className="zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
         <span className="flex items-center gap-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
         <span className="flex items-center justify-end gap-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
+        <span className="col-span-2 truncate text-center">{weather ? `H ${celsius(weather.high)}°C / ${Math.round(weather.high)}°F · L ${celsius(weather.low)}°C / ${Math.round(weather.low)}°F` : 'H — · L —'}</span>
       </div>
     </article>
   );
