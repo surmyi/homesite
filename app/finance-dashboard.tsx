@@ -88,7 +88,7 @@ type FinanceDashboardResponse = {
 
 type FinanceView = 'overview' | 'history';
 type ComparisonPeriod = 'dd' | 'mm' | 'yy' | 'ytd';
-type ChartCadence = 'monthly' | 'annual';
+type ChartCadence = 'daily' | 'monthly' | 'annual';
 
 const COMPARISON_PERIODS: Array<{ id: ComparisonPeriod; label: string }> = [
   { id: 'dd', label: 'D/D' },
@@ -541,13 +541,18 @@ function coverageSignature(data: FinanceDashboardResponse, date: string, group: 
 }
 
 function historyPeriodKey(date: string, cadence: ChartCadence) {
+  if (cadence === 'daily') return date;
   return cadence === 'monthly' ? date.slice(0, 7) : date.slice(0, 4);
 }
 
 function historyPeriodLabel(key: string, cadence: ChartCadence) {
   if (cadence === 'annual') return key;
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' })
-    .format(new Date(`${key}-01T00:00:00Z`));
+  const date = new Date(`${key}${cadence === 'monthly' ? '-01' : ''}T00:00:00Z`);
+  if (cadence === 'daily') {
+    const day = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(date);
+    return `${day} ’${key.slice(2, 4)}`;
+  }
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' }).format(date);
 }
 
 function buildPeriodSeries(
@@ -568,17 +573,23 @@ function buildPeriodSeries(
 
   const startSource = new Date(`${from}T00:00:00Z`);
   const endSource = new Date(`${to}T00:00:00Z`);
-  const start = cadence === 'monthly'
-    ? new Date(Date.UTC(startSource.getUTCFullYear(), startSource.getUTCMonth(), 1))
-    : new Date(Date.UTC(startSource.getUTCFullYear(), 0, 1));
-  const end = cadence === 'monthly'
-    ? new Date(Date.UTC(endSource.getUTCFullYear(), endSource.getUTCMonth(), 1))
-    : new Date(Date.UTC(endSource.getUTCFullYear(), 0, 1));
+  const start = cadence === 'daily'
+    ? startSource
+    : cadence === 'monthly'
+      ? new Date(Date.UTC(startSource.getUTCFullYear(), startSource.getUTCMonth(), 1))
+      : new Date(Date.UTC(startSource.getUTCFullYear(), 0, 1));
+  const end = cadence === 'daily'
+    ? endSource
+    : cadence === 'monthly'
+      ? new Date(Date.UTC(endSource.getUTCFullYear(), endSource.getUTCMonth(), 1))
+      : new Date(Date.UTC(endSource.getUTCFullYear(), 0, 1));
   const points: HistoryPoint[] = [];
   for (const cursor = new Date(start); cursor <= end;) {
-    const key = cadence === 'monthly'
-      ? `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
-      : String(cursor.getUTCFullYear());
+    const key = cadence === 'daily'
+      ? cursor.toISOString().slice(0, 10)
+      : cadence === 'monthly'
+        ? `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
+        : String(cursor.getUTCFullYear());
     const date = reportByPeriod.get(key) ?? null;
     const row = date ? data.summary.rows.find((item) => item.date === date) : undefined;
     const rawValue = valueForGroup(data, row, group);
@@ -592,7 +603,8 @@ function buildPeriodSeries(
       coverageKey: date ? coverageSignature(data, date, group) : null,
       coverageBreak: false,
     });
-    if (cadence === 'monthly') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    if (cadence === 'daily') cursor.setUTCDate(cursor.getUTCDate() + 1);
+    else if (cadence === 'monthly') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     else cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
   }
   let previousCoverage: string | null = null;
@@ -630,7 +642,7 @@ function HistoryTrend({
   from: string;
   to: string;
 }) {
-  const [cadence, setCadence] = useState<ChartCadence>('monthly');
+  const [cadence, setCadence] = useState<ChartCadence>('daily');
   const series = useMemo(
     () => buildPeriodSeries(data, selectedGroup, debt, dates, cadence, from, to),
     [data, selectedGroup, debt, dates, cadence, from, to],
@@ -651,7 +663,8 @@ function HistoryTrend({
   const chartConfig = {
     value: { label: selectedName, color: '#2e7484' },
   } satisfies ChartConfig;
-  const unit = cadence === 'monthly' ? 'month' : 'year';
+  const unit = cadence === 'daily' ? 'day' : cadence === 'monthly' ? 'month' : 'year';
+  const cadenceDescription = cadence === 'daily' ? 'Reported balance by day' : `Last reported balance in each ${unit}`;
 
   return (
     <section className="rounded-[1.25rem] border border-border bg-card p-4 shadow-[0_10px_30px_rgb(43_75_84/0.06)] sm:p-5" aria-labelledby="history-trend-title">
@@ -661,7 +674,7 @@ function HistoryTrend({
             <span className="grid size-8 place-items-center rounded-xl bg-primary/10 text-primary"><ChartNoAxesCombined className="size-4" aria-hidden="true" /></span>
             <div>
               <h2 id="history-trend-title" className="font-heading text-sm font-semibold sm:text-base">{selectedName} over time</h2>
-              <p className="text-[10px] text-muted-foreground sm:text-xs">Last reported balance in each {unit}</p>
+              <p className="text-[10px] text-muted-foreground sm:text-xs">{cadenceDescription}</p>
             </div>
           </div>
         </div>
@@ -671,10 +684,10 @@ function HistoryTrend({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">Chart interval</p>
         <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Chart interval">
-          {(['monthly', 'annual'] as const).map((item) => (
+          {(['daily', 'monthly', 'annual'] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -682,7 +695,7 @@ function HistoryTrend({
               onClick={() => setCadence(item)}
               className={`min-h-11 rounded-lg px-3 text-xs font-semibold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${cadence === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              {item === 'monthly' ? 'Monthly' : 'Annual'}
+              {item === 'daily' ? 'Daily' : item === 'monthly' ? 'Monthly' : 'Annual'}
             </button>
           ))}
         </div>
@@ -1015,7 +1028,7 @@ function HistoryWorkspace({
           </div>
         </div>
       )}
-      <p className="pt-2 text-[10px] text-muted-foreground">Unavailable means a report was received without a usable balance. Months or years without snapshots remain visible as chart gaps.</p>
+      <p className="pt-2 text-[10px] text-muted-foreground">Unavailable means a report was received without a usable balance. Days, months, or years without selected reports remain visible as chart gaps.</p>
     </div>
   );
 }
