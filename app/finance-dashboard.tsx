@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { firstComparisonDate, type ComparisonPeriod } from '@/lib/finance-comparison';
 
 type FinanceValue = {
   balance: number | null;
@@ -87,7 +88,6 @@ type FinanceDashboardResponse = {
 };
 
 type FinanceView = 'overview' | 'history';
-type ComparisonPeriod = 'dd' | 'mm' | 'yy' | 'ytd';
 type ChartCadence = 'daily' | 'monthly' | 'annual';
 
 const COMPARISON_PERIODS: Array<{ id: ComparisonPeriod; label: string }> = [
@@ -143,35 +143,6 @@ function formatReportDate(value: string | null, compact = false) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function isoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function comparisonTargetDate(latestDate: string | undefined, period: ComparisonPeriod) {
-  if (!latestDate) return null;
-  const latest = new Date(`${latestDate}T00:00:00Z`);
-  if (period === 'dd') {
-    latest.setUTCDate(latest.getUTCDate() - 1);
-    return isoDate(latest);
-  }
-  if (period === 'ytd') return `${latest.getUTCFullYear() - 1}-12-31`;
-
-  const targetYear = latest.getUTCFullYear() - (period === 'yy' ? 1 : 0);
-  const targetMonth = latest.getUTCMonth() - (period === 'mm' ? 1 : 0);
-  const monthStart = new Date(Date.UTC(targetYear, targetMonth, 1));
-  const lastDay = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
-  return isoDate(new Date(Date.UTC(
-    monthStart.getUTCFullYear(),
-    monthStart.getUTCMonth(),
-    Math.min(latest.getUTCDate(), lastDay),
-  )));
-}
-
-function comparisonDate(data: FinanceDashboardResponse, latestDate: string | undefined, period: ComparisonPeriod) {
-  const target = comparisonTargetDate(latestDate, period);
-  return target && data.dates.includes(target) ? target : null;
-}
-
 function observedAccounts(data: FinanceDashboardResponse, date: string | undefined, group?: string) {
   if (!date) return new Set<string>();
   const ids = new Set<string>();
@@ -183,23 +154,6 @@ function observedAccounts(data: FinanceDashboardResponse, date: string | undefin
     }
   }
   return ids;
-}
-
-function observedAccountsByKind(data: FinanceDashboardResponse, date: string | undefined, kind: 'asset' | 'debt') {
-  if (!date) return new Set<string>();
-  const ids = new Set<string>();
-  for (const category of data.categories) {
-    if (category.balanceKind !== kind) continue;
-    const row = category.rows.find((item) => item.date === date);
-    for (const account of category.accounts) {
-      if (row?.values[account.id]) ids.add(account.id);
-    }
-  }
-  return ids;
-}
-
-function sameSet(left: Set<string>, right: Set<string>) {
-  return left.size === right.size && Array.from(left).every((item) => right.has(item));
 }
 
 function aggregateGroupValue(data: FinanceDashboardResponse, date: string | undefined, group: string): FinanceValue {
@@ -220,6 +174,22 @@ function aggregateGroupValue(data: FinanceDashboardResponse, date: string | unde
     }
   }
   return found ? { balance: total, ok: true, errorType: null } : null;
+}
+
+function aggregateKindValue(data: FinanceDashboardResponse, date: string | undefined, kind: 'asset' | 'debt') {
+  if (!date) return null;
+  const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
+  let found = false;
+  let total = 0;
+  for (const column of data.summary.columns) {
+    if (kindByGroup.get(column.id) !== kind) continue;
+    const value = aggregateGroupValue(data, date, column.id);
+    if (!value) continue;
+    found = true;
+    if (!value.ok || value.balance === null) return null;
+    total += value.balance;
+  }
+  return found ? total : null;
 }
 
 function Delta({ value, dark = false }: { value: number | null; dark?: boolean }) {
@@ -339,56 +309,55 @@ function FinanceHeader({
 function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplore: (group: string) => void }) {
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>('dd');
   const latest = data.summary.rows.at(-1) ?? null;
-  const baselineDate = comparisonDate(data, latest?.date, comparisonPeriod);
   const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
   const latestAccounts = observedAccounts(data, latest?.date);
-  const baselineAccounts = observedAccounts(data, baselineDate ?? undefined);
-  const comparablePortfolio = baselineDate !== null && sameSet(latestAccounts, baselineAccounts);
-  const comparableAssets = baselineDate !== null && sameSet(
-    observedAccountsByKind(data, latest?.date, 'asset'),
-    observedAccountsByKind(data, baselineDate, 'asset'),
+  const baselineDate = firstComparisonDate(
+    data.dates,
+    latest?.date,
+    comparisonPeriod,
+    (date) => valueForGroup(data, data.summary.rows.find((row) => row.date === date), 'all') !== null,
   );
-  const comparableDebt = baselineDate !== null && sameSet(
-    observedAccountsByKind(data, latest?.date, 'debt'),
-    observedAccountsByKind(data, baselineDate, 'debt'),
+  const baselineAssetDate = firstComparisonDate(
+    data.dates,
+    latest?.date,
+    comparisonPeriod,
+    (date) => aggregateKindValue(data, date, 'asset') !== null,
+  );
+  const baselineDebtDate = firstComparisonDate(
+    data.dates,
+    latest?.date,
+    comparisonPeriod,
+    (date) => aggregateKindValue(data, date, 'debt') !== null,
   );
 
   const groups = data.summary.columns.map((column) => {
-    const value = numericValue(aggregateGroupValue(data, latest?.date, column.id));
-    const baselineValue = numericValue(aggregateGroupValue(data, baselineDate ?? undefined, column.id));
-    const comparableGroup = sameSet(
-      observedAccounts(data, latest?.date, column.id),
-      observedAccounts(data, baselineDate ?? undefined, column.id),
+    const groupBaselineDate = firstComparisonDate(
+      data.dates,
+      latest?.date,
+      comparisonPeriod,
+      (date) => numericValue(aggregateGroupValue(data, date, column.id)) !== null,
     );
+    const value = numericValue(aggregateGroupValue(data, latest?.date, column.id));
+    const baselineValue = numericValue(aggregateGroupValue(data, groupBaselineDate ?? undefined, column.id));
     const kind = kindByGroup.get(column.id) ?? 'asset';
     return {
       ...column,
       kind,
       value,
       baselineValue,
-      delta: baselineDate !== null && comparableGroup && value !== null && baselineValue !== null
+      delta: groupBaselineDate !== null && value !== null && baselineValue !== null
         ? value - baselineValue
         : null,
     } as const;
   });
 
-  const assetGroups = groups.filter((group) => group.kind === 'asset');
-  const debtGroups = groups.filter((group) => group.kind === 'debt');
-  const assets = assetGroups.every((group) => group.value !== null)
-    ? assetGroups.reduce((sum, group) => sum + (group.value ?? 0), 0)
-    : null;
-  const debtOwed = debtGroups.every((group) => group.value !== null)
-    ? debtGroups.reduce((sum, group) => sum + (group.value ?? 0), 0)
-    : null;
-  const baselineAssets = assetGroups.every((group) => group.baselineValue !== null)
-    ? assetGroups.reduce((sum, group) => sum + (group.baselineValue ?? 0), 0)
-    : null;
-  const baselineDebtOwed = debtGroups.every((group) => group.baselineValue !== null)
-    ? debtGroups.reduce((sum, group) => sum + (group.baselineValue ?? 0), 0)
-    : null;
-  const trackedBalance = assets !== null && debtOwed !== null ? assets - debtOwed : null;
-  const baselineTrackedBalance = baselineAssets !== null && baselineDebtOwed !== null ? baselineAssets - baselineDebtOwed : null;
-  const aggregateComparable = comparablePortfolio && comparableAssets && comparableDebt && trackedBalance !== null && baselineTrackedBalance !== null;
+  const assets = aggregateKindValue(data, latest?.date, 'asset');
+  const debtOwed = aggregateKindValue(data, latest?.date, 'debt');
+  const baselineAssets = aggregateKindValue(data, baselineAssetDate ?? undefined, 'asset');
+  const baselineDebtOwed = aggregateKindValue(data, baselineDebtDate ?? undefined, 'debt');
+  const baselineRow = data.summary.rows.find((row) => row.date === baselineDate);
+  const trackedBalance = valueForGroup(data, latest ?? undefined, 'all');
+  const baselineTrackedBalance = valueForGroup(data, baselineRow, 'all');
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-0.5 [scrollbar-width:thin]">
@@ -412,12 +381,12 @@ function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplo
         <MetricCard
           label="Tracked balance"
           value={trackedBalance}
-          delta={aggregateComparable ? trackedBalance - baselineTrackedBalance : null}
+          delta={baselineDate !== null && trackedBalance !== null && baselineTrackedBalance !== null ? trackedBalance - baselineTrackedBalance : null}
           primary
           note="Recorded assets less recorded liabilities; not a net-worth estimate."
         />
-        <MetricCard label="Tracked assets" value={assets} delta={comparableAssets && assets !== null && baselineAssets !== null ? assets - baselineAssets : null} />
-        <MetricCard label="Debt owed" value={debtOwed} delta={comparableDebt && debtOwed !== null && baselineDebtOwed !== null ? debtOwed - baselineDebtOwed : null} />
+        <MetricCard label="Tracked assets" value={assets} delta={baselineAssetDate !== null && assets !== null && baselineAssets !== null ? assets - baselineAssets : null} />
+        <MetricCard label="Debt owed" value={debtOwed} delta={baselineDebtDate !== null && debtOwed !== null && baselineDebtOwed !== null ? debtOwed - baselineDebtOwed : null} />
       </section>
 
       <div className="mb-2 mt-4 flex items-end justify-between gap-3 sm:mt-5">
