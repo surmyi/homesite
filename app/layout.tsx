@@ -13,8 +13,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://surmyi.tianyiwu-95.chatgpt.site'),
   title: 'surmyi — home',
   description: 'A personal home for the things that matter today.',
+  openGraph: {
+    type: 'website',
+    url: '/',
+    title: 'surmyi',
+    description: 'A personal home for what matters today.',
+    images: [{ url: '/og.png', width: 1729, height: 910, alt: 'surmyi — A personal home for what matters today.' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'surmyi',
+    description: 'A personal home for what matters today.',
+    images: ['/og.png'],
+  },
 };
 
 export default function RootLayout({
