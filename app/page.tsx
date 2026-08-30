@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { FinanceDashboard } from './finance-dashboard';
 
 type City = {
   id: number;
@@ -509,6 +510,14 @@ export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [activeTab, setActiveTab] = useState<'home' | 'finance'>('home');
+
+  useEffect(() => {
+    const syncTab = () => setActiveTab(window.location.hash === '#finance' ? 'finance' : 'home');
+    syncTab();
+    window.addEventListener('hashchange', syncTab);
+    return () => window.removeEventListener('hashchange', syncTab);
+  }, []);
 
   useEffect(() => {
     const initialClock = window.setTimeout(() => setNow(new Date()), 0);
@@ -546,36 +555,62 @@ export default function Home() {
     } catch {}
   }
 
+  function chooseTab(tab: 'home' | 'finance') {
+    setActiveTab(tab);
+    window.history.replaceState(null, '', tab === 'home' ? '#home' : '#finance');
+  }
+
   return (
     <main className="h-dvh overflow-hidden bg-background px-4 text-foreground sm:px-8 lg:px-12">
       <header className="mx-auto flex h-16 max-w-[1480px] items-center justify-between border-b border-border/70">
-        <Link href="/" className="font-heading text-lg font-semibold tracking-[-0.04em]">surmyi<span className="text-primary">.</span></Link>
-        <nav aria-label="Primary navigation" className="flex items-center gap-1 text-sm">
-          <a href="#home" className="rounded-full bg-foreground px-4 py-2 text-background">Home</a>
+        <Link href="#home" onClick={() => chooseTab('home')} className="font-heading text-lg font-semibold tracking-[-0.04em]">surmyi<span className="text-primary">.</span></Link>
+        <nav aria-label="Primary navigation" className="flex items-center rounded-full bg-muted p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => chooseTab('home')}
+            aria-current={activeTab === 'home' ? 'page' : undefined}
+            className={`rounded-full px-3 py-1.5 font-medium transition-colors sm:px-4 ${activeTab === 'home' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Home
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseTab('finance')}
+            aria-current={activeTab === 'finance' ? 'page' : undefined}
+            className={`rounded-full px-3 py-1.5 font-medium transition-colors sm:px-4 ${activeTab === 'finance' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Finance
+          </button>
         </nav>
-        <button onClick={() => setRefreshToken((token) => token + 1)} aria-label="Refresh weather" className="grid size-9 place-items-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground">
+        <button onClick={() => setRefreshToken((token) => token + 1)} aria-label={activeTab === 'home' ? 'Refresh weather' : 'Refresh finance data'} className="grid size-9 place-items-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground">
           <RefreshCw className="size-4" />
         </button>
       </header>
 
-      <section id="home" className="mx-auto flex h-[calc(100dvh-4rem)] max-w-[1480px] min-h-0 flex-col">
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="zone-board">
-          <div className="zone-primary">
-            <PrimaryZone city={cities[0]} now={now} refreshToken={refreshToken} onEdit={() => setEditingIndex(0)} />
-          </div>
-          <div className="zone-secondary-grid">
-            {[1, 2, 3].map((index) => (
-              <div className="zone-secondary-item" key={index}>
-                <SecondaryZone city={cities[index]} now={now} refreshToken={refreshToken} onEdit={() => setEditingIndex(index)} />
+      {activeTab === 'home' ? (
+        <section id="home" className="mx-auto flex h-[calc(100dvh-4rem)] max-w-[1480px] min-h-0 flex-col">
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <div className="zone-board">
+              <div className="zone-primary">
+                <PrimaryZone city={cities[0]} now={now} refreshToken={refreshToken} onEdit={() => setEditingIndex(0)} />
               </div>
-            ))}
+              <div className="zone-secondary-grid">
+                {[1, 2, 3].map((index) => (
+                  <div className="zone-secondary-item" key={index}>
+                    <SecondaryZone city={cities[index]} now={now} refreshToken={refreshToken} onEdit={() => setEditingIndex(index)} />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : (
+        <section id="finance" className="mx-auto h-[calc(100dvh-4rem)] max-w-[1480px] min-h-0">
+          <FinanceDashboard refreshToken={refreshToken} />
+        </section>
+      )}
 
-      <a className="fixed bottom-1.5 right-3 text-[9px] text-muted-foreground/45 underline-offset-2 hover:underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Weather by Open-Meteo</a>
+      {activeTab === 'home' && <a className="fixed bottom-1.5 right-3 text-[9px] text-muted-foreground/45 underline-offset-2 hover:underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Weather by Open-Meteo</a>}
 
       <CityPicker
         open={editingIndex !== null}
