@@ -124,8 +124,6 @@ const DEFAULT_CITIES: (City | null)[] = [
   },
 ];
 
-const POPULAR_CITIES = DEFAULT_CITIES.filter((city): city is City => city !== null);
-
 const WEATHER_LABELS: Record<number, string> = {
   0: 'Clear sky',
   1: 'Mostly clear',
@@ -445,8 +443,6 @@ function CityPicker({ open, current, primary, onOpenChange, onSelect }: { open: 
     };
   }, [open, query]);
 
-  const shownCities = query.trim().length < 2 ? POPULAR_CITIES : results;
-
   function choose(city: City | null) {
     onSelect(city);
     onOpenChange(false);
@@ -465,19 +461,18 @@ function CityPicker({ open, current, primary, onOpenChange, onSelect }: { open: 
           </div>
         </DialogHeader>
 
-        <div className="max-h-[360px] overflow-y-auto p-3">
-          <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">{query.trim().length < 2 ? 'Quick picks' : 'Search results'}</p>
+        {query.trim().length >= 2 && <div className="max-h-[360px] overflow-y-auto p-3">
           {loading && <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" /> Searching places</div>}
           {error && <div className="py-12 text-center text-sm text-muted-foreground">Search is unavailable right now. Try again shortly.</div>}
-          {!loading && !error && shownCities.length === 0 && <div className="py-12 text-center text-sm text-muted-foreground">No matching places found.</div>}
-          {!loading && !error && shownCities.map((city) => (
+          {!loading && !error && results.length === 0 && <div className="py-12 text-center text-sm text-muted-foreground">No matching places found.</div>}
+          {!loading && !error && results.map((city) => (
             <button key={`${city.id}-${city.latitude}`} onClick={() => choose(city)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted">
               <span className="grid size-9 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground"><MapPin className="size-4" /></span>
               <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{city.name}</strong><small className="block truncate text-xs text-muted-foreground">{city.admin1 ? `${city.admin1}, ` : ''}{city.country}</small></span>
               {current?.id === city.id && <Check className="size-4 text-primary" />}
             </button>
           ))}
-        </div>
+        </div>}
 
         {current && (
           <div className="border-t border-border p-3">
