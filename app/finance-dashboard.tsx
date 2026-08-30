@@ -464,6 +464,7 @@ type HistoryPoint = {
   reported: boolean;
   coverageKey: string | null;
   coverageBreak: boolean;
+  segment: number | null;
 };
 
 const HISTORY_PAGE_SIZES = [5, 10, 20];
@@ -483,12 +484,16 @@ function valueForGroup(data: FinanceDashboardResponse, row: FinanceRow | undefin
   if (!row) return null;
   if (group !== 'all') return numericValue(aggregateGroupValue(data, row.date, group));
   const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
-  const values = data.summary.columns.map((column) => ({
-    kind: kindByGroup.get(column.id) ?? 'asset',
-    value: numericValue(aggregateGroupValue(data, row.date, column.id)),
-  }));
-  if (values.length === 0 || values.some((entry) => entry.value === null)) return null;
-  return values.reduce((sum, entry) => sum + (entry.kind === 'debt' ? -Math.abs(entry.value ?? 0) : (entry.value ?? 0)), 0);
+  let found = false;
+  let total = 0;
+  for (const column of data.summary.columns) {
+    const value = aggregateGroupValue(data, row.date, column.id);
+    if (!value) continue;
+    found = true;
+    if (!value.ok || value.balance === null) return null;
+    total += kindByGroup.get(column.id) === 'debt' ? -Math.abs(value.balance) : value.balance;
+  }
+  return found ? total : null;
 }
 
 function historyAccounts(data: FinanceDashboardResponse, group: string) {
@@ -602,17 +607,26 @@ function buildPeriodSeries(
       reported: date !== null,
       coverageKey: date ? coverageSignature(data, date, group) : null,
       coverageBreak: false,
+      segment: null,
     });
     if (cadence === 'daily') cursor.setUTCDate(cursor.getUTCDate() + 1);
     else if (cadence === 'monthly') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     else cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
   }
   let previousCoverage: string | null = null;
+  let previousPointPlotted = false;
+  let segment = -1;
   return points.map((point) => {
-    if (!point.reported || !point.coverageKey) return point;
-    const coverageBreak = previousCoverage !== null && previousCoverage !== point.coverageKey;
-    previousCoverage = point.coverageKey;
-    return coverageBreak && point.value !== null ? { ...point, value: null, coverageBreak: true } : point;
+    const hasCoverage = point.reported && Boolean(point.coverageKey);
+    const coverageBreak = hasCoverage && previousCoverage !== null && previousCoverage !== point.coverageKey;
+    if (hasCoverage) previousCoverage = point.coverageKey;
+    if (!hasCoverage || point.value === null) {
+      previousPointPlotted = false;
+      return { ...point, coverageBreak, segment: null };
+    }
+    if (!previousPointPlotted || coverageBreak) segment += 1;
+    previousPointPlotted = true;
+    return { ...point, coverageBreak, segment };
   });
 }
 
@@ -646,6 +660,24 @@ function HistoryTrend({
   const series = useMemo(
     () => buildPeriodSeries(data, selectedGroup, debt, dates, cadence, from, to),
     [data, selectedGroup, debt, dates, cadence, from, to],
+  );
+  const segmentIds = useMemo(
+    () => Array.from(new Set(series.flatMap((point) => point.segment === null ? [] : [point.segment]))),
+    [series],
+  );
+  const segmentSizes = useMemo(() => {
+    const sizes = new Map<number, number>();
+    for (const point of series) {
+      if (point.segment === null || point.value === null) continue;
+      sizes.set(point.segment, (sizes.get(point.segment) ?? 0) + 1);
+    }
+    return sizes;
+  }, [series]);
+  const chartSeries = useMemo(
+    () => series.map((point) => point.segment === null || point.value === null
+      ? point
+      : { ...point, [`segment-${point.segment}`]: point.value }),
+    [series],
   );
   const relevantDates = useMemo(
     () => selectedGroup === 'all' ? dates : dates.filter((date) => observedAccounts(data, date, selectedGroup).size > 0),
@@ -704,7 +736,7 @@ function HistoryTrend({
       {plottedCount > 0 ? (
         <ChartContainer config={chartConfig} className="mt-2 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} ${cadence} balance history`}>
           <AreaChart
-            data={series}
+            data={chartSeries}
             accessibilityLayer
             title={`${selectedName} ${cadence} balance history`}
             desc={`${reportCount} reported ${reportCount === 1 ? unit : `${unit}s`} across ${series.length} periods, with ${gapCount} empty periods and ${coverageBreakCount} coverage changes shown as gaps.`}
@@ -722,7 +754,7 @@ function HistoryTrend({
             <ChartTooltip
               cursor={{ stroke: 'var(--border)' }}
               content={({ active, payload }) => {
-                const point = payload?.[0]?.payload as HistoryPoint | undefined;
+                const point = payload?.find((item) => item.value !== null && item.value !== undefined)?.payload as HistoryPoint | undefined;
                 if (!active || !point || point.value === null) return null;
                 return (
                   <div className="min-w-40 rounded-xl border border-border bg-popover px-3 py-2 text-popover-foreground shadow-xl">
@@ -733,7 +765,21 @@ function HistoryTrend({
                 );
               }}
             />
-            <Area dataKey="value" type="monotone" stroke="var(--color-value)" strokeWidth={2.25} fill="url(#finance-history-fill)" connectNulls={false} dot={plottedCount <= 24 ? { r: 3 } : false} activeDot={{ r: 4 }} />
+            {segmentIds.map((segmentId) => (
+              <Area
+                key={segmentId}
+                dataKey={`segment-${segmentId}`}
+                name={selectedName}
+                type="monotone"
+                stroke="var(--color-value)"
+                strokeWidth={2.25}
+                fill="url(#finance-history-fill)"
+                connectNulls={false}
+                dot={plottedCount <= 24 || segmentSizes.get(segmentId) === 1 ? { r: 3 } : false}
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+              />
+            ))}
           </AreaChart>
         </ChartContainer>
       ) : (
