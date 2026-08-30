@@ -374,8 +374,10 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
           {weather && status === 'ready' && (
             <>
               <WeatherIcon code={weather.weatherCode} isDay={weather.isDay} className="ml-auto mb-0.5 size-[clamp(0.75rem,9cqi,1.25rem)] text-primary" />
-              <p className="text-[clamp(0.7rem,8cqi,1.1rem)] font-medium leading-none">{Math.round(weather.temperature)}°F</p>
-              <p className="zone-muted mt-0.5 text-[clamp(0.48rem,5cqi,0.68rem)]">{celsius(weather.temperature)}°C</p>
+              <div className="flex items-baseline justify-end gap-[clamp(0.25rem,3cqi,0.55rem)] whitespace-nowrap">
+                <p className="text-[clamp(0.7rem,8cqi,1.1rem)] font-medium leading-none">{Math.round(weather.temperature)}°F</p>
+                <p className="zone-muted text-[clamp(0.48rem,5cqi,0.68rem)]">{celsius(weather.temperature)}°C</p>
+              </div>
             </>
           )}
         </div>
@@ -384,9 +386,9 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
       <div className="zone-divider zone-muted grid grid-cols-2 gap-1 border-t pt-[clamp(0.25rem,4cqi,0.75rem)] text-[clamp(0.46rem,5.2cqi,0.72rem)]">
         <span className="flex items-center gap-1"><Sunrise className="size-[1em]" /> {weather ? shortSolarTime(weather.sunrise) : '—:—'}</span>
         <span className="flex items-center justify-end gap-1"><Sunset className="size-[1em]" /> {weather ? shortSolarTime(weather.sunset) : '—:—'}</span>
-        <span className="col-span-2 text-center" aria-label="High and low temperatures">
-          <strong className="block truncate font-medium">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°F` : '— / —'}</strong>
-          <span className="zone-subtle block truncate">{weather ? `${celsius(weather.high)}° / ${celsius(weather.low)}°C` : '— / —'}</span>
+        <span className="col-span-2 grid grid-cols-2 items-baseline whitespace-nowrap text-center" aria-label="High and low temperatures">
+          <strong className="zone-divider truncate border-r pr-1 font-medium">{weather ? `${Math.round(weather.high)}° / ${Math.round(weather.low)}°F` : '— / —'}</strong>
+          <span className="zone-subtle truncate pl-1">{weather ? `${celsius(weather.high)}° / ${celsius(weather.low)}°C` : '— / —'}</span>
         </span>
       </div>
     </article>
