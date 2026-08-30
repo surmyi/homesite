@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Check,
@@ -32,7 +32,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { FinanceDashboard } from './finance-dashboard';
+
+const FinanceDashboard = lazy(() => import('./finance-dashboard').then((module) => ({ default: module.FinanceDashboard })));
 
 type City = {
   id: number;
@@ -513,7 +514,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'home' | 'finance'>('home');
 
   useEffect(() => {
-    const syncTab = () => setActiveTab(window.location.hash === '#finance' ? 'finance' : 'home');
+    const syncTab = () => setActiveTab(window.location.hash.startsWith('#finance') ? 'finance' : 'home');
     syncTab();
     window.addEventListener('hashchange', syncTab);
     return () => window.removeEventListener('hashchange', syncTab);
@@ -606,7 +607,9 @@ export default function Home() {
         </section>
       ) : (
         <section id="finance" className="mx-auto h-[calc(100dvh-4rem)] max-w-[1480px] min-h-0">
-          <FinanceDashboard refreshToken={refreshToken} />
+          <Suspense fallback={<output className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> Loading finance</output>}>
+            <FinanceDashboard refreshToken={refreshToken} />
+          </Suspense>
         </section>
       )}
 
