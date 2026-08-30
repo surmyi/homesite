@@ -573,7 +573,8 @@ function buildPeriodSeries(
   const reportByPeriod = new Map<string, string>();
   for (const date of [...dates].sort()) {
     if (group !== 'all' && observedAccounts(data, date, group).size === 0) continue;
-    reportByPeriod.set(historyPeriodKey(date, cadence), date);
+    const periodKey = historyPeriodKey(date, cadence);
+    if (!reportByPeriod.has(periodKey)) reportByPeriod.set(periodKey, date);
   }
 
   const startSource = new Date(`${from}T00:00:00Z`);
@@ -696,7 +697,7 @@ function HistoryTrend({
     value: { label: selectedName, color: '#2e7484' },
   } satisfies ChartConfig;
   const unit = cadence === 'daily' ? 'day' : cadence === 'monthly' ? 'month' : 'year';
-  const cadenceDescription = cadence === 'daily' ? 'Reported balance by day' : `Last reported balance in each ${unit}`;
+  const cadenceDescription = cadence === 'daily' ? 'Reported balance by day' : `First available balance in each ${unit}`;
 
   return (
     <section className="rounded-[1.25rem] border border-border bg-card p-4 shadow-[0_10px_30px_rgb(43_75_84/0.06)] sm:p-5" aria-labelledby="history-trend-title">
