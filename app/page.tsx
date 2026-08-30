@@ -374,9 +374,9 @@ function SecondaryZone({ city, now, refreshToken, onEdit }: { city: City | null;
           {weather && status === 'ready' && (
             <>
               <WeatherIcon code={weather.weatherCode} isDay={weather.isDay} className="ml-auto mb-0.5 size-[clamp(0.75rem,9cqi,1.25rem)] text-primary" />
-              <div className="flex items-baseline justify-end gap-[clamp(0.25rem,3cqi,0.55rem)] whitespace-nowrap">
+              <div className="flex flex-col items-end whitespace-nowrap">
                 <p className="text-[clamp(0.7rem,8cqi,1.1rem)] font-medium leading-none">{Math.round(weather.temperature)}°F</p>
-                <p className="zone-muted text-[clamp(0.48rem,5cqi,0.68rem)]">{celsius(weather.temperature)}°C</p>
+                <p className="zone-muted mt-0.5 text-[clamp(0.48rem,5cqi,0.68rem)]">{celsius(weather.temperature)}°C</p>
               </div>
             </>
           )}
