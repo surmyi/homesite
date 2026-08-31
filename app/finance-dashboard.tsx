@@ -470,7 +470,6 @@ type HistoryPoint = {
   reported: boolean;
   coverageKey: string | null;
   coverageBreak: boolean;
-  segment: number | null;
 };
 
 const HISTORY_PAGE_SIZES = [5, 10, 20];
@@ -657,26 +656,17 @@ function buildPeriodSeries(
       reported: date !== null,
       coverageKey: date ? coverageSignature(data, date, group, metric) : null,
       coverageBreak: false,
-      segment: null,
     });
     if (cadence === 'daily') cursor.setUTCDate(cursor.getUTCDate() + 1);
     else if (cadence === 'monthly') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     else cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
   }
   let previousCoverage: string | null = null;
-  let previousPointPlotted = false;
-  let segment = -1;
   return points.map((point) => {
     const hasCoverage = point.reported && Boolean(point.coverageKey);
     const coverageBreak = hasCoverage && previousCoverage !== null && previousCoverage !== point.coverageKey;
     if (hasCoverage) previousCoverage = point.coverageKey;
-    if (!hasCoverage || point.value === null) {
-      previousPointPlotted = false;
-      return { ...point, coverageBreak, segment: null };
-    }
-    if (!previousPointPlotted || coverageBreak) segment += 1;
-    previousPointPlotted = true;
-    return { ...point, coverageBreak, segment };
+    return { ...point, coverageBreak };
   });
 }
 
@@ -721,24 +711,6 @@ function HistoryTrend({
     () => buildPeriodSeries(data, selectedGroup, metric, dates, cadence, from, to),
     [data, selectedGroup, metric, dates, cadence, from, to],
   );
-  const segmentIds = useMemo(
-    () => Array.from(new Set(series.flatMap((point) => point.segment === null ? [] : [point.segment]))),
-    [series],
-  );
-  const segmentSizes = useMemo(() => {
-    const sizes = new Map<number, number>();
-    for (const point of series) {
-      if (point.segment === null || point.value === null) continue;
-      sizes.set(point.segment, (sizes.get(point.segment) ?? 0) + 1);
-    }
-    return sizes;
-  }, [series]);
-  const chartSeries = useMemo(
-    () => series.map((point) => point.segment === null || point.value === null
-      ? point
-      : { ...point, [`segment-${point.segment}`]: point.value }),
-    [series],
-  );
   const relevantDates = useMemo(
     () => dates.filter((date) => trendHasObservation(data, date, selectedGroup, metric)),
     [data, dates, metric, selectedGroup],
@@ -748,9 +720,10 @@ function HistoryTrend({
   const latestValue = trendValue(data, latestRow, selectedGroup, metric);
   const gapCount = series.filter((point) => !point.reported).length;
   const coverageBreakCount = series.filter((point) => point.coverageBreak).length;
-  const unavailableCount = series.filter((point) => point.reported && point.value === null && !point.coverageBreak).length;
+  const unavailableCount = series.filter((point) => point.reported && point.value === null).length;
   const reportCount = series.length - gapCount;
   const plottedCount = series.filter((point) => point.value !== null).length;
+  const missingValueCount = series.length - plottedCount;
   const trendColor = metric === 'assets' ? '#347b63' : metric === 'debt' ? '#a6634c' : '#2e7484';
   const chartConfig = {
     value: { label: selectedName, color: trendColor },
@@ -798,10 +771,10 @@ function HistoryTrend({
       {plottedCount > 0 ? (
         <ChartContainer config={chartConfig} className="mt-2 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} ${cadence} balance history`}>
           <AreaChart
-            data={chartSeries}
+            data={series}
             accessibilityLayer
             title={`${selectedName} ${cadence} balance history`}
-            desc={`${reportCount} reported ${reportCount === 1 ? unit : `${unit}s`} across ${series.length} periods, with ${gapCount} empty periods and ${coverageBreakCount} coverage changes shown as gaps.`}
+            desc={`${plottedCount} valid ${plottedCount === 1 ? 'value' : 'values'} across ${series.length} periods. ${missingValueCount} ${missingValueCount === 1 ? 'period has' : 'periods have'} no usable value. Solid dots mark valid data; the line connects adjacent valid values across missing periods.`}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           >
             <defs>
@@ -827,21 +800,20 @@ function HistoryTrend({
                 );
               }}
             />
-            {segmentIds.map((segmentId) => (
-              <Area
-                key={segmentId}
-                dataKey={`segment-${segmentId}`}
-                name={selectedName}
-                type="monotone"
-                stroke="var(--color-value)"
-                strokeWidth={2.25}
-                fill={`url(#${fillId})`}
-                connectNulls={false}
-                dot={plottedCount <= 24 || segmentSizes.get(segmentId) === 1 ? { r: 3 } : false}
-                activeDot={{ r: 4 }}
-                isAnimationActive={false}
-              />
-            ))}
+            <Area
+              dataKey="value"
+              name={selectedName}
+              type="linear"
+              stroke="var(--color-value)"
+              strokeWidth={2.25}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill={`url(#${fillId})`}
+              connectNulls
+              dot={{ r: 2.75, fill: 'var(--color-value)', stroke: 'var(--color-value)', strokeWidth: 0 }}
+              activeDot={{ r: 4, fill: 'var(--color-value)', stroke: 'var(--color-value)', strokeWidth: 0 }}
+              isAnimationActive={false}
+            />
           </AreaChart>
         </ChartContainer>
       ) : (
@@ -856,7 +828,7 @@ function HistoryTrend({
       <div className="mt-1 flex items-center justify-between gap-4 text-[10px] text-muted-foreground sm:text-xs">
         <p>{plottedCount === 0
           ? (reportCount === 0 ? 'No reports in the selected period.' : 'No usable balance in the selected period.')
-          : (gapCount === 0 ? `Every ${unit} has a report.` : `${gapCount} ${gapCount === 1 ? unit : `${unit}s`} without a report shown as gaps.`)}</p>
+          : (missingValueCount === 0 ? `Every ${unit} has a valid value.` : `${missingValueCount} ${missingValueCount === 1 ? unit : `${unit}s`} ${missingValueCount === 1 ? 'has' : 'have'} no usable value; the line bridges between adjacent valid dots.`)}</p>
         <div className="flex items-center gap-3">
           {coverageBreakCount > 0 && <p>{coverageBreakCount} coverage {coverageBreakCount === 1 ? 'change' : 'changes'}</p>}
           {unavailableCount > 0 && <p>{unavailableCount} unavailable</p>}
@@ -1253,7 +1225,7 @@ function HistoryWorkspace({
           </div>
         </div>
       )}
-      <p className="pt-2 text-[10px] text-muted-foreground">Unavailable means a report was received without a usable balance. Days, months, or years without selected reports remain visible as chart gaps.</p>
+      <p className="pt-2 text-[10px] text-muted-foreground">Solid dots mark valid reported values. The line connects adjacent valid dots across missing or unavailable periods.</p>
     </div>
   );
 }
