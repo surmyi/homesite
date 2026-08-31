@@ -40,7 +40,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -966,14 +965,14 @@ export function SiteApp({ currentUser }: { currentUser: CurrentUser }) {
               <ChevronDown className="hidden size-3 text-muted-foreground md:block" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64 p-2">
-              <DropdownMenuLabel className="px-2 py-2">
+              <div className="px-2 py-2 text-xs text-muted-foreground">
                 <span className="block truncate font-medium text-foreground">
                   {currentUser.displayName ?? 'Signed in'}
                 </span>
                 <span className="mt-0.5 block truncate font-normal">
                   {currentUser.email}
                 </span>
-              </DropdownMenuLabel>
+              </div>
               {isAdmin && (
                 <>
                   <DropdownMenuSeparator />
