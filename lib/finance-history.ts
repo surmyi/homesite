@@ -1,27 +1,10 @@
 export type HistoryCadence = 'daily' | 'monthly' | 'annual';
-export type HistoryRangePreset = '30d' | '90d' | '1y' | 'all' | 'custom';
+export type HistoryRangePreset = '30d' | '1y' | 'all' | 'custom';
 
 export type HistoryDateRange = {
   from: string;
   to: string;
 };
-
-export function defaultHistoryRange(
-  cadence: HistoryCadence,
-): HistoryRangePreset {
-  if (cadence === 'monthly') return '1y';
-  if (cadence === 'annual') return 'all';
-  return '30d';
-}
-
-export function historyRangeAfterCadenceChange(
-  currentPreset: HistoryRangePreset,
-  cadence: HistoryCadence,
-): HistoryRangePreset {
-  return currentPreset === 'custom'
-    ? currentPreset
-    : defaultHistoryRange(cadence);
-}
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -44,6 +27,15 @@ export function firstHistoryDates(
     if (!firstByPeriod.has(key)) firstByPeriod.set(key, date);
   }
   return Array.from(firstByPeriod.values());
+}
+
+export function plottableHistoryPoints<
+  T extends { date: string | null; value: number | null },
+>(points: T[]): Array<T & { date: string; value: number }> {
+  return points.filter(
+    (point): point is T & { date: string; value: number } =>
+      point.date !== null && point.value !== null,
+  );
 }
 
 function subtractDays(date: string, days: number) {
@@ -83,12 +75,9 @@ export function historyDateRange(
   if (preset === 'all' || preset === 'custom')
     return { from: minDate, to: maxDate };
 
-  const requestedFrom =
-    preset === '30d'
-      ? subtractDays(maxDate, 29)
-      : preset === '90d'
-        ? subtractDays(maxDate, 89)
-        : subtractYear(maxDate);
+  const requestedFrom = preset === '30d'
+    ? subtractDays(maxDate, 29)
+    : subtractYear(maxDate);
   return {
     from: requestedFrom < minDate ? minDate : requestedFrom,
     to: maxDate,

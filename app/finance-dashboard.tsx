@@ -48,7 +48,7 @@ import { firstComparisonDate, type ComparisonPeriod } from '@/lib/finance-compar
 import {
   firstHistoryDates,
   historyDateRange,
-  historyRangeAfterCadenceChange,
+  plottableHistoryPoints,
   type HistoryCadence,
   type HistoryRangePreset,
 } from '@/lib/finance-history';
@@ -479,7 +479,6 @@ const HISTORY_RANGE_OPTIONS: Array<{
   compactLabel: string;
 }> = [
   { id: '30d', label: 'Last 30 days', compactLabel: '30D' },
-  { id: '90d', label: 'Last 90 days', compactLabel: '90D' },
   { id: '1y', label: 'Last 1 year', compactLabel: '1Y' },
   { id: 'all', label: 'All dates', compactLabel: 'All' },
   { id: 'custom', label: 'Custom', compactLabel: 'Custom' },
@@ -711,6 +710,7 @@ function HistoryTrend({
     () => buildPeriodSeries(data, selectedGroup, metric, dates, cadence, from, to),
     [data, selectedGroup, metric, dates, cadence, from, to],
   );
+  const plottedSeries = useMemo(() => plottableHistoryPoints(series), [series]);
   const relevantDates = useMemo(
     () => dates.filter((date) => trendHasObservation(data, date, selectedGroup, metric)),
     [data, dates, metric, selectedGroup],
@@ -722,7 +722,7 @@ function HistoryTrend({
   const coverageBreakCount = series.filter((point) => point.coverageBreak).length;
   const unavailableCount = series.filter((point) => point.reported && point.value === null).length;
   const reportCount = series.length - gapCount;
-  const plottedCount = series.filter((point) => point.value !== null).length;
+  const plottedCount = plottedSeries.length;
   const missingValueCount = series.length - plottedCount;
   const trendColor = metric === 'assets' ? '#347b63' : metric === 'debt' ? '#a6634c' : '#2e7484';
   const chartConfig = {
@@ -771,7 +771,7 @@ function HistoryTrend({
       {plottedCount > 0 ? (
         <ChartContainer config={chartConfig} className="mt-2 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} ${cadence} balance history`}>
           <AreaChart
-            data={series}
+            data={plottedSeries}
             accessibilityLayer
             title={`${selectedName} ${cadence} balance history`}
             desc={`${plottedCount} valid ${plottedCount === 1 ? 'value' : 'values'} across ${series.length} periods. ${missingValueCount} ${missingValueCount === 1 ? 'period has' : 'periods have'} no usable value. Solid dots mark valid data; the line connects adjacent valid values across missing periods.`}
@@ -787,6 +787,7 @@ function HistoryTrend({
             <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} />
             <YAxis tickLine={false} axisLine={false} width={54} tickFormatter={compactCurrency} />
             <ChartTooltip
+              isAnimationActive={false}
               cursor={{ stroke: 'var(--border)' }}
               content={({ active, payload }) => {
                 const point = payload?.find((item) => item.value !== null && item.value !== undefined)?.payload as HistoryPoint | undefined;
@@ -959,8 +960,8 @@ function HistoryWorkspace({
 }) {
   const [page, setPage] = useState(0);
   const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
-  const [cadence, setCadence] = useState<ChartCadence>('daily');
-  const [rangePreset, setRangePreset] = useState<HistoryRangePreset>('30d');
+  const [cadence, setCadence] = useState<ChartCadence>('monthly');
+  const [rangePreset, setRangePreset] = useState<HistoryRangePreset>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [draftFrom, setDraftFrom] = useState('');
@@ -1045,7 +1046,6 @@ function HistoryWorkspace({
   function changeCadence(nextCadence: ChartCadence) {
     if (nextCadence === cadence) return;
     setCadence(nextCadence);
-    setRangePreset(historyRangeAfterCadenceChange(rangePreset, nextCadence));
     setPage(0);
   }
 
@@ -1103,7 +1103,7 @@ function HistoryWorkspace({
               onValueChange={(values) => changeRangePreset((values[0] as HistoryRangePreset | undefined) ?? null)}
               aria-labelledby="history-date-range-label"
               spacing={1}
-              className="grid h-11 w-full grid-cols-5 rounded-xl bg-muted p-1 sm:flex sm:w-fit"
+              className="grid h-11 w-full grid-cols-4 rounded-xl bg-muted p-1 sm:flex sm:w-fit"
             >
               {HISTORY_RANGE_OPTIONS.map((option) => (
                 <ToggleGroupItem

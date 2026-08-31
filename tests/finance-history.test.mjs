@@ -2,28 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  defaultHistoryRange,
   firstHistoryDates,
   historyDateRange,
-  historyRangeAfterCadenceChange,
+  plottableHistoryPoints,
 } from '../lib/finance-history.ts';
 
-test('each chart cadence has a useful default date range', () => {
-  assert.equal(defaultHistoryRange('daily'), '30d');
-  assert.equal(defaultHistoryRange('monthly'), '1y');
-  assert.equal(defaultHistoryRange('annual'), 'all');
-});
-
-test('cadence changes preserve an exact custom date range', () => {
-  assert.equal(historyRangeAfterCadenceChange('custom', 'daily'), 'custom');
-  assert.equal(historyRangeAfterCadenceChange('custom', 'monthly'), 'custom');
-  assert.equal(historyRangeAfterCadenceChange('custom', 'annual'), 'custom');
-});
-
-test('cadence changes keep useful defaults for preset ranges', () => {
-  assert.equal(historyRangeAfterCadenceChange('90d', 'daily'), '30d');
-  assert.equal(historyRangeAfterCadenceChange('30d', 'monthly'), '1y');
-  assert.equal(historyRangeAfterCadenceChange('1y', 'annual'), 'all');
+test('chart interaction keeps only real observations without reordering them', () => {
+  const points = [
+    { date: '2026-08-01', value: 0, label: 'zero' },
+    { date: null, value: null, label: 'missing date' },
+    { date: '2026-08-03', value: null, label: 'missing value' },
+    { date: '2026-08-04', value: -25, label: 'negative' },
+  ];
+  assert.deepEqual(plottableHistoryPoints(points), [points[0], points[3]]);
 });
 
 test('monthly snapshots keep the first qualifying report in each month', () => {
@@ -74,10 +65,6 @@ test('rolling ranges are inclusive and anchored to the latest report', () => {
   const dates = ['2024-01-01', '2026-08-30'];
   assert.deepEqual(historyDateRange(dates, '30d'), {
     from: '2026-08-01',
-    to: '2026-08-30',
-  });
-  assert.deepEqual(historyDateRange(dates, '90d'), {
-    from: '2026-06-02',
     to: '2026-08-30',
   });
   assert.deepEqual(historyDateRange(dates, '1y'), {
