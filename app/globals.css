@@ -76,8 +76,8 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { @apply h-full overflow-hidden bg-background font-sans antialiased; }
-  body { @apply h-full overflow-hidden bg-background text-foreground; }
+  html { @apply min-h-full overflow-x-clip bg-background font-sans antialiased lg:h-full lg:overflow-hidden; }
+  body { @apply min-h-full overflow-x-clip bg-background text-foreground lg:h-full lg:overflow-hidden; }
   button, a { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background; }
 }
 

@@ -396,7 +396,7 @@ function Overview({
   const baselineTrackedBalance = valueForGroup(data, baselineRow, 'all');
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-0.5 [scrollbar-width:thin]">
+    <div className="pb-[max(0.75rem,env(safe-area-inset-bottom))] pr-0.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain [scrollbar-width:thin]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Difference</p>
         <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Balance comparison period">
@@ -1034,7 +1034,22 @@ function HistoryWorkspace({
       const target = document.getElementById(`finance-trend-${focusMetric}`);
       if (target instanceof HTMLElement) {
         target.focus({ preventScroll: true });
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const behavior = reducedMotion ? 'auto' : 'smooth';
+        const targetRect = target.getBoundingClientRect();
+        const scrollContainer = document.getElementById('finance-history-scroll');
+        if (window.matchMedia('(min-width: 1024px)').matches && scrollContainer) {
+          const containerRect = scrollContainer.getBoundingClientRect();
+          scrollContainer.scrollTo({
+            behavior,
+            top: Math.max(0, scrollContainer.scrollTop + targetRect.top - containerRect.top - 12),
+          });
+        } else {
+          window.scrollTo({
+            behavior,
+            top: Math.max(0, window.scrollY + targetRect.top - 12),
+          });
+        }
       }
       onFocusHandled();
     });
@@ -1083,7 +1098,7 @@ function HistoryWorkspace({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-0.5 [scrollbar-width:thin]">
+    <div id="finance-history-scroll" className="pb-[max(0.75rem,env(safe-area-inset-bottom))] pr-0.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain [scrollbar-width:thin]">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <label htmlFor="history-category" className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Category</label>
@@ -1327,7 +1342,7 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col py-3 sm:py-4">
+    <div className="flex min-h-[calc(100dvh-4rem)] flex-col py-3 sm:py-4 lg:h-full lg:min-h-0">
       <FinanceHeader view={view} onViewChange={changeView} latestReportDate={data.latestReportDate} />
       {status === 'error' && <p aria-live="polite" className="mb-2 rounded-lg bg-destructive/8 px-3 py-2 text-[11px] text-destructive">Refresh failed. Showing the last finance data loaded on this device.</p>}
       {view === 'overview'

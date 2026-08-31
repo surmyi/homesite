@@ -899,7 +899,7 @@ export function SiteApp({ currentUser }: { currentUser: CurrentUser }) {
   }
 
   return (
-    <main className="h-dvh overflow-hidden bg-background px-4 text-foreground sm:px-8 lg:px-12">
+    <main className="min-h-dvh overflow-x-clip bg-background px-4 text-foreground sm:px-8 lg:h-dvh lg:min-h-0 lg:overflow-hidden lg:px-12">
       <header className="mx-auto grid h-16 max-w-[1480px] grid-cols-[1fr_auto_1fr] items-center border-b border-border/70">
         <Link
           href="#home"
@@ -1033,7 +1033,7 @@ export function SiteApp({ currentUser }: { currentUser: CurrentUser }) {
       ) : activeTab === 'finance' ? (
         <section
           id="finance"
-          className="mx-auto h-[calc(100dvh-4rem)] max-w-[1480px] min-h-0"
+          className="mx-auto min-h-[calc(100dvh-4rem)] max-w-[1480px] lg:h-[calc(100dvh-4rem)] lg:min-h-0"
         >
           <Suspense
             fallback={
