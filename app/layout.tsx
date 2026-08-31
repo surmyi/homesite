@@ -13,9 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://surmyi.tianyiwu-95.chatgpt.site'),
+  metadataBase: new URL('https://surmyi.cc'),
   title: 'surmyi — home',
   description: 'A personal home for the things that matter today.',
+  robots: { index: false, follow: false },
   openGraph: {
     type: 'website',
     url: '/',

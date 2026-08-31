@@ -14,6 +14,8 @@ import {
   sha256,
   validateSnapshot,
 } from '@/lib/finance-ingest';
+import { requireFinanceIngestToken } from '@/lib/finance-auth';
+import { authorizeRequest } from '@/lib/site-auth';
 
 export const runtime = 'edge';
 
@@ -64,6 +66,8 @@ function formatMoney(cents: number | null) {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireFinanceIngestToken(request);
+  if (authError) return authError;
   const rawJson = await request.text();
   if (new TextEncoder().encode(rawJson).byteLength > MAX_FINANCE_BODY_BYTES) {
     return Response.json({ error: 'Snapshot is too large' }, { status: 413 });
@@ -536,7 +540,9 @@ export async function POST(request: Request) {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authorization = await authorizeRequest(request);
+  if ('response' in authorization) return authorization.response;
   const db = await ensureFinanceSchema();
   const [
     snapshotsResult,
@@ -780,19 +786,26 @@ export async function GET() {
   }));
 
   const latest = snapshotsResult.results.at(-1) ?? null;
-  return Response.json({
-    portfolio: { id: DEFAULT_PORTFOLIO_ID, name: 'Personal', currency: 'USD' },
-    latestReportDate: dates.at(-1) ?? null,
-    lastIngestedAt: latest?.ingested_at ?? null,
-    dates,
-    accountCount: observedAccountIds.size,
-    summary: {
-      columns: summaryGroups.map((id) => ({
-        id,
-        name: id.replaceAll('_', ' '),
-      })),
-      rows: summaryRows,
+  return Response.json(
+    {
+      portfolio: {
+        id: DEFAULT_PORTFOLIO_ID,
+        name: 'Personal',
+        currency: 'USD',
+      },
+      latestReportDate: dates.at(-1) ?? null,
+      lastIngestedAt: latest?.ingested_at ?? null,
+      dates,
+      accountCount: observedAccountIds.size,
+      summary: {
+        columns: summaryGroups.map((id) => ({
+          id,
+          name: id.replaceAll('_', ' '),
+        })),
+        rows: summaryRows,
+      },
+      categories: categorySheets,
     },
-    categories: categorySheets,
-  });
+    { headers: { 'Cache-Control': 'private, no-store' } },
+  );
 }

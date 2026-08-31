@@ -12,6 +12,7 @@ import {
   sha256,
   validateSnapshot,
 } from '@/lib/finance-ingest';
+import { requireFinanceIngestToken } from '@/lib/finance-auth';
 
 export const runtime = 'edge';
 
@@ -22,6 +23,8 @@ type SnapshotRow = {
 };
 
 export async function POST(request: Request) {
+  const authError = await requireFinanceIngestToken(request);
+  if (authError) return authError;
   const rawJson = await request.text();
   if (new TextEncoder().encode(rawJson).byteLength > MAX_FINANCE_BODY_BYTES) {
     return Response.json({ error: 'Snapshot is too large' }, { status: 413 });
