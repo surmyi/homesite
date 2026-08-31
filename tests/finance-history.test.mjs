@@ -5,12 +5,25 @@ import {
   defaultHistoryRange,
   firstHistoryDates,
   historyDateRange,
+  historyRangeAfterCadenceChange,
 } from '../lib/finance-history.ts';
 
 test('each chart cadence has a useful default date range', () => {
   assert.equal(defaultHistoryRange('daily'), '30d');
   assert.equal(defaultHistoryRange('monthly'), '1y');
   assert.equal(defaultHistoryRange('annual'), 'all');
+});
+
+test('cadence changes preserve an exact custom date range', () => {
+  assert.equal(historyRangeAfterCadenceChange('custom', 'daily'), 'custom');
+  assert.equal(historyRangeAfterCadenceChange('custom', 'monthly'), 'custom');
+  assert.equal(historyRangeAfterCadenceChange('custom', 'annual'), 'custom');
+});
+
+test('cadence changes keep useful defaults for preset ranges', () => {
+  assert.equal(historyRangeAfterCadenceChange('90d', 'daily'), '30d');
+  assert.equal(historyRangeAfterCadenceChange('30d', 'monthly'), '1y');
+  assert.equal(historyRangeAfterCadenceChange('1y', 'annual'), 'all');
 });
 
 test('monthly snapshots keep the first qualifying report in each month', () => {

@@ -46,9 +46,9 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { firstComparisonDate, type ComparisonPeriod } from '@/lib/finance-comparison';
 import {
-  defaultHistoryRange,
   firstHistoryDates,
   historyDateRange,
+  historyRangeAfterCadenceChange,
   type HistoryCadence,
   type HistoryRangePreset,
 } from '@/lib/finance-history';
@@ -1045,17 +1045,28 @@ function HistoryWorkspace({
   function changeCadence(nextCadence: ChartCadence) {
     if (nextCadence === cadence) return;
     setCadence(nextCadence);
-    setRangePreset(defaultHistoryRange(nextCadence));
+    setRangePreset(historyRangeAfterCadenceChange(rangePreset, nextCadence));
     setPage(0);
   }
 
   function changeRangePreset(nextPreset: HistoryRangePreset | null) {
     if (!nextPreset) return;
     if (nextPreset === 'custom') {
-      setDraftFrom(from);
-      setDraftTo(to);
-      setCustomFrom(from);
-      setCustomTo(to);
+      const savedRangeIsValid = Boolean(
+        customFrom
+        && customTo
+        && customFrom <= customTo
+        && customFrom >= minDate
+        && customTo <= maxDate,
+      );
+      const nextFrom = savedRangeIsValid ? customFrom : from;
+      const nextTo = savedRangeIsValid ? customTo : to;
+      setDraftFrom(nextFrom);
+      setDraftTo(nextTo);
+      if (!savedRangeIsValid) {
+        setCustomFrom(nextFrom);
+        setCustomTo(nextTo);
+      }
     }
     setRangePreset(nextPreset);
     setPage(0);
@@ -1109,17 +1120,17 @@ function HistoryWorkspace({
           </div>
 
           {rangePreset === 'custom' && (
-            <div className="min-w-0">
-              <form id="history-custom-date-range" aria-label="Custom date range" onSubmit={applyRange} className="flex w-full flex-wrap items-end gap-2 rounded-xl border border-border bg-card p-1.5 shadow-[0_8px_24px_rgb(43_75_84/0.05)] sm:w-auto">
-                <label htmlFor="history-date-from" className="min-w-[7.5rem] flex-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            <div className="w-full min-w-0 sm:w-auto">
+              <form id="history-custom-date-range" aria-label="Custom date range" onSubmit={applyRange} className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-xl border border-border bg-card p-2 shadow-[0_8px_24px_rgb(43_75_84/0.05)] sm:w-auto sm:grid-cols-[minmax(8.5rem,1fr)_minmax(8.5rem,1fr)_auto] sm:items-end sm:p-1.5">
+                <label htmlFor="history-date-from" className="w-full min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   From
-                  <Input id="history-date-from" type="date" required min={minDate} max={draftTo || maxDate} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+                  <Input id="history-date-from" type="date" required min={minDate} max={draftTo || maxDate} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 block h-11 w-full min-w-0 max-w-full bg-background text-sm normal-case tracking-normal text-foreground" />
                 </label>
-                <label htmlFor="history-date-to" className="min-w-[7.5rem] flex-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                <label htmlFor="history-date-to" className="w-full min-w-0 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   To
-                  <Input id="history-date-to" type="date" required min={draftFrom || minDate} max={maxDate} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 h-11 bg-background text-sm normal-case tracking-normal text-foreground" />
+                  <Input id="history-date-to" type="date" required min={draftFrom || minDate} max={maxDate} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} aria-invalid={draftRangeInvalid || undefined} aria-describedby={draftRangeInvalid ? 'history-date-range-error' : undefined} className="mt-1 block h-11 w-full min-w-0 max-w-full bg-background text-sm normal-case tracking-normal text-foreground" />
                 </label>
-                <Button type="submit" disabled={draftRangeInvalid || !draftFrom || !draftTo} className="min-h-11 px-4">Apply</Button>
+                <Button type="submit" disabled={draftRangeInvalid || !draftFrom || !draftTo} className="min-h-11 w-full px-4 sm:w-auto">Apply</Button>
               </form>
               {draftRangeInvalid && <p id="history-date-range-error" role="alert" className="mt-1.5 text-xs text-destructive">Choose a valid range within the available report dates.</p>}
             </div>

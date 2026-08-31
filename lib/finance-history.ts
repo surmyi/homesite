@@ -14,6 +14,15 @@ export function defaultHistoryRange(
   return '30d';
 }
 
+export function historyRangeAfterCadenceChange(
+  currentPreset: HistoryRangePreset,
+  cadence: HistoryCadence,
+): HistoryRangePreset {
+  return currentPreset === 'custom'
+    ? currentPreset
+    : defaultHistoryRange(cadence);
+}
+
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
