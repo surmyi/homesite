@@ -83,7 +83,9 @@ const accessSchema = [
 let schemaPromise: Promise<void> | null = null;
 
 export function getAuthMode(): AuthMode {
-  return env.AUTH_MODE === 'google' ? 'google' : 'sites';
+  // Google is the application-level identity provider. The Sites mode exists
+  // only as a temporary compatibility bridge while the host remains private.
+  return env.AUTH_MODE === 'sites' ? 'sites' : 'google';
 }
 
 export async function ensureAccessSchema() {
@@ -124,6 +126,23 @@ export async function ensureAccessSchema() {
           ),
           env.DB.prepare(
             `INSERT OR IGNORE INTO site_auth_meta (key, value) VALUES ('bootstrap_admin_v1', ?)`,
+          ).bind(now),
+        ]);
+      }
+      const selfLockoutRepair = await env.DB.prepare(
+        `SELECT value FROM site_auth_meta WHERE key = 'self_lockout_repair_v1'`,
+      ).first<{ value: string }>();
+      if (!selfLockoutRepair) {
+        const now = new Date().toISOString();
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE site_access_users
+             SET role = 'admin', status = 'active', updated_at = ?
+             WHERE id = 'usr_bootstrap_sites_owner'`,
+          ).bind(now),
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO site_auth_meta (key, value)
+             VALUES ('self_lockout_repair_v1', ?)`,
           ).bind(now),
         ]);
       }

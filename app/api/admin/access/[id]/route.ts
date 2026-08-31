@@ -1,5 +1,9 @@
 import { normalizeEmail } from '@/lib/auth-core';
 import {
+  isOwnAccessRecord,
+  wouldRevokeOwnAdminAccess,
+} from '@/lib/access-policy';
+import {
   authorizeRequest,
   ensureAccessSchema,
   requireSameOrigin,
@@ -100,6 +104,30 @@ export async function PATCH(
     before.role === 'admin' &&
     before.status === 'active' &&
     (role !== 'admin' || status !== 'active');
+  if (
+    wouldRevokeOwnAdminAccess(
+      authorization.user.id,
+      id,
+      {
+        email: before.email,
+        role: before.role,
+        status: before.status,
+      },
+      {
+        email,
+        role,
+        status,
+      },
+    )
+  ) {
+    return Response.json(
+      {
+        error:
+          'You cannot disable, demote, or change the login email of your own administrator account',
+      },
+      { status: 409 },
+    );
+  }
   if (removesActiveAdmin && (await activeAdminCount(db)) <= 1) {
     return Response.json(
       {
@@ -201,6 +229,12 @@ export async function DELETE(
     .first<AccessRow>();
   if (!before)
     return Response.json({ error: 'Access record not found' }, { status: 404 });
+  if (isOwnAccessRecord(authorization.user.id, id)) {
+    return Response.json(
+      { error: 'You cannot delete your own administrator account' },
+      { status: 409 },
+    );
+  }
   if (
     before.role === 'admin' &&
     before.status === 'active' &&

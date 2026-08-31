@@ -361,8 +361,10 @@ export function AccessControl({ currentUser }: AccessControlProps) {
     event.preventDefault();
     if (!formMode || formBusy) return;
 
+    const editingCurrentUser =
+      formMode.kind === 'edit' && formMode.user.id === currentUser.id;
     const email = form.email.trim().toLocaleLowerCase();
-    if (!email) {
+    if (!editingCurrentUser && !email) {
       setFormError('Enter the Google account email to allow.');
       return;
     }
@@ -380,12 +382,16 @@ export function AccessControl({ currentUser }: AccessControlProps) {
     try {
       await requestJson(url, {
         method: isCreating ? 'POST' : 'PATCH',
-        body: JSON.stringify({
-          email,
-          displayName: form.displayName.trim() || null,
-          role: form.role,
-          status: form.status,
-        }),
+        body: JSON.stringify(
+          editingCurrentUser
+            ? { displayName: form.displayName.trim() || null }
+            : {
+                email,
+                displayName: form.displayName.trim() || null,
+                role: form.role,
+                status: form.status,
+              },
+        ),
       });
       setFormMode(null);
       setNotice(
@@ -404,7 +410,7 @@ export function AccessControl({ currentUser }: AccessControlProps) {
   }
 
   async function setEnabled(user: AccessUser, enabled: boolean) {
-    if (busyUserId) return;
+    if (busyUserId || user.id === currentUser.id) return;
     setBusyUserId(user.id);
     setNotice(null);
     setPageError(null);
@@ -426,12 +432,14 @@ export function AccessControl({ currentUser }: AccessControlProps) {
   }
 
   function askToDelete(user: AccessUser) {
+    if (user.id === currentUser.id) return;
     setDeleteError(null);
     setPendingDelete(user);
   }
 
   async function deleteUser() {
-    if (!pendingDelete || busyUserId) return;
+    if (!pendingDelete || busyUserId || pendingDelete.id === currentUser.id)
+      return;
     const user = pendingDelete;
     setBusyUserId(user.id);
     setDeleteError(null);
@@ -463,25 +471,36 @@ export function AccessControl({ currentUser }: AccessControlProps) {
 
   function UserActions({ user }: { user: AccessUser }) {
     const busy = busyUserId === user.id;
+    const current = user.id === currentUser.id;
     return (
       <div className="flex items-center justify-end gap-3">
-        <label className="flex min-h-9 items-center gap-2 text-xs text-muted-foreground">
-          <span className="sr-only">
-            {user.status === 'active' ? 'Disable' : 'Enable'} {user.email}
+        {current ? (
+          <span
+            className="flex min-h-9 items-center gap-1.5 text-xs font-medium text-muted-foreground"
+            title="You cannot disable your own account."
+          >
+            <ShieldCheck className="size-4" aria-hidden="true" />
+            <span className="hidden lg:inline">Protected</span>
           </span>
-          {busy ? (
-            <Loader2
-              className="size-4 animate-spin"
-              aria-label="Updating access"
-            />
-          ) : (
-            <Switch
-              checked={user.status === 'active'}
-              onCheckedChange={(checked) => void setEnabled(user, checked)}
-              aria-label={`${user.status === 'active' ? 'Disable' : 'Enable'} access for ${user.email}`}
-            />
-          )}
-        </label>
+        ) : (
+          <label className="flex min-h-9 items-center gap-2 text-xs text-muted-foreground">
+            <span className="sr-only">
+              {user.status === 'active' ? 'Disable' : 'Enable'} {user.email}
+            </span>
+            {busy ? (
+              <Loader2
+                className="size-4 animate-spin"
+                aria-label="Updating access"
+              />
+            ) : (
+              <Switch
+                checked={user.status === 'active'}
+                onCheckedChange={(checked) => void setEnabled(user, checked)}
+                aria-label={`${user.status === 'active' ? 'Disable' : 'Enable'} access for ${user.email}`}
+              />
+            )}
+          </label>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -490,6 +509,11 @@ export function AccessControl({ currentUser }: AccessControlProps) {
                 variant="ghost"
                 size="icon"
                 aria-label={`Actions for ${user.email}`}
+                title={
+                  current
+                    ? 'Edit your profile. Your own access is protected.'
+                    : undefined
+                }
               />
             }
           >
@@ -497,20 +521,28 @@ export function AccessControl({ currentUser }: AccessControlProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-40">
             <DropdownMenuItem onClick={() => openEdit(user)}>
-              <Pencil aria-hidden="true" /> Edit access
+              <Pencil aria-hidden="true" />
+              {current ? 'Edit profile' : 'Edit access'}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => askToDelete(user)}
-            >
-              <Trash2 aria-hidden="true" /> Remove person
-            </DropdownMenuItem>
+            {!current && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => askToDelete(user)}
+                >
+                  <Trash2 aria-hidden="true" /> Remove person
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     );
   }
+
+  const editingCurrentUser =
+    formMode?.kind === 'edit' && formMode.user.id === currentUser.id;
 
   return (
     <section
@@ -772,34 +804,53 @@ export function AccessControl({ currentUser }: AccessControlProps) {
                   : 'Add a person'}
               </DialogTitle>
               <DialogDescription>
-                Access is granted to this exact Google account. Changes take
-                effect immediately.
+                {editingCurrentUser
+                  ? 'Update your display name. Your own access is protected while you are signed in.'
+                  : 'Access is granted to this exact Google account. Changes take effect immediately.'}
               </DialogDescription>
             </DialogHeader>
 
             <div className="my-5 space-y-4">
-              <label
-                htmlFor="access-email"
-                className="block text-sm font-medium"
-              >
-                Email address
-                <Input
-                  id="access-email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={form.email}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      email: event.target.value,
-                    }))
-                  }
-                  disabled={formBusy}
-                  className="mt-1.5 h-10"
-                  placeholder="name@gmail.com"
-                />
-              </label>
+              {editingCurrentUser ? (
+                <div className="flex gap-3 rounded-xl border border-border bg-muted/45 p-3">
+                  <ShieldCheck
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      Your access is protected
+                    </p>
+                    <p className="mt-0.5 break-words text-xs leading-relaxed text-muted-foreground">
+                      Signed in as {form.email}. You cannot change your own
+                      email, role, status, or remove yourself.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  htmlFor="access-email"
+                  className="block text-sm font-medium"
+                >
+                  Email address
+                  <Input
+                    id="access-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={form.email}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    disabled={formBusy}
+                    className="mt-1.5 h-10"
+                    placeholder="name@gmail.com"
+                  />
+                </label>
+              )}
 
               <label
                 htmlFor="access-display-name"
@@ -824,72 +875,74 @@ export function AccessControl({ currentUser }: AccessControlProps) {
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label
-                  htmlFor="access-role"
-                  className="block text-sm font-medium"
-                >
-                  Role
-                  <Select
-                    value={form.role}
-                    onValueChange={(value) =>
-                      value &&
-                      setForm((current) => ({
-                        ...current,
-                        role: value as AccessRole,
-                      }))
-                    }
-                    disabled={formBusy}
+              {!editingCurrentUser && (
+                <div className="grid grid-cols-2 gap-3">
+                  <label
+                    htmlFor="access-role"
+                    className="block text-sm font-medium"
                   >
-                    <SelectTrigger
-                      id="access-role"
-                      className="mt-1.5 h-10 w-full"
+                    Role
+                    <Select
+                      value={form.role}
+                      onValueChange={(value) =>
+                        value &&
+                        setForm((current) => ({
+                          ...current,
+                          role: value as AccessRole,
+                        }))
+                      }
+                      disabled={formBusy}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      <SelectItem value="viewer">
-                        <UserRound aria-hidden="true" /> Viewer
-                      </SelectItem>
-                      <SelectItem value="admin">
-                        <ShieldCheck aria-hidden="true" /> Admin
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </label>
-                <label
-                  htmlFor="access-status"
-                  className="block text-sm font-medium"
-                >
-                  Status
-                  <Select
-                    value={form.status}
-                    onValueChange={(value) =>
-                      value &&
-                      setForm((current) => ({
-                        ...current,
-                        status: value as AccessStatus,
-                      }))
-                    }
-                    disabled={formBusy}
+                      <SelectTrigger
+                        id="access-role"
+                        className="mt-1.5 h-10 w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        <SelectItem value="viewer">
+                          <UserRound aria-hidden="true" /> Viewer
+                        </SelectItem>
+                        <SelectItem value="admin">
+                          <ShieldCheck aria-hidden="true" /> Admin
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label
+                    htmlFor="access-status"
+                    className="block text-sm font-medium"
                   >
-                    <SelectTrigger
-                      id="access-status"
-                      className="mt-1.5 h-10 w-full"
+                    Status
+                    <Select
+                      value={form.status}
+                      onValueChange={(value) =>
+                        value &&
+                        setForm((current) => ({
+                          ...current,
+                          status: value as AccessStatus,
+                        }))
+                      }
+                      disabled={formBusy}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      <SelectItem value="active">
-                        <CheckCircle2 aria-hidden="true" /> Active
-                      </SelectItem>
-                      <SelectItem value="disabled">
-                        <XCircle aria-hidden="true" /> Disabled
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </label>
-              </div>
+                      <SelectTrigger
+                        id="access-status"
+                        className="mt-1.5 h-10 w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        <SelectItem value="active">
+                          <CheckCircle2 aria-hidden="true" /> Active
+                        </SelectItem>
+                        <SelectItem value="disabled">
+                          <XCircle aria-hidden="true" /> Disabled
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                </div>
+              )}
 
               {formError && (
                 <Alert variant="destructive">
