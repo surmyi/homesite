@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertCircle,
@@ -97,6 +97,8 @@ type FinanceDashboardResponse = {
 
 type FinanceView = 'overview' | 'history';
 type ChartCadence = HistoryCadence;
+type AggregateMetric = 'net' | 'assets' | 'debt';
+type HistoryTrendMetric = AggregateMetric | 'group';
 
 const COMPARISON_PERIODS: Array<{ id: ComparisonPeriod; label: string }> = [
   { id: 'dd', label: 'D/D' },
@@ -116,6 +118,11 @@ const GROUP_VISUALS: Record<string, { icon: LucideIcon; accent: string; wash: st
 };
 
 const FALLBACK_VISUAL = { icon: Landmark, accent: 'bg-slate-500', wash: 'bg-slate-500/10 text-slate-700' };
+
+function aggregateMetricFromHash(hash: string): AggregateMetric | null {
+  const match = hash.match(/^#finance\/details\/(net|assets|debt)$/);
+  return (match?.[1] as AggregateMetric | undefined) ?? null;
+}
 
 function numericValue(value: FinanceValue) {
   return value?.ok && value.balance !== null ? value.balance : null;
@@ -151,11 +158,17 @@ function formatReportDate(value: string | null, compact = false) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function observedAccounts(data: FinanceDashboardResponse, date: string | undefined, group?: string) {
+function observedAccounts(
+  data: FinanceDashboardResponse,
+  date: string | undefined,
+  group?: string,
+  kind?: 'asset' | 'debt',
+) {
   if (!date) return new Set<string>();
   const ids = new Set<string>();
   for (const category of data.categories) {
     if (group && category.summaryGroup !== group) continue;
+    if (kind && category.balanceKind !== kind) continue;
     const row = category.rows.find((item) => item.date === date);
     for (const account of category.accounts) {
       if (row?.values[account.id]) ids.add(account.id);
@@ -186,16 +199,18 @@ function aggregateGroupValue(data: FinanceDashboardResponse, date: string | unde
 
 function aggregateKindValue(data: FinanceDashboardResponse, date: string | undefined, kind: 'asset' | 'debt') {
   if (!date) return null;
-  const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
   let found = false;
   let total = 0;
-  for (const column of data.summary.columns) {
-    if (kindByGroup.get(column.id) !== kind) continue;
-    const value = aggregateGroupValue(data, date, column.id);
-    if (!value) continue;
-    found = true;
-    if (!value.ok || value.balance === null) return null;
-    total += value.balance;
+  for (const category of data.categories) {
+    if (category.balanceKind !== kind) continue;
+    const row = category.rows.find((item) => item.date === date);
+    for (const account of category.accounts) {
+      const value = row?.values[account.id] ?? null;
+      if (!value) continue;
+      found = true;
+      if (!value.ok || value.balance === null) return null;
+      total += kind === 'debt' ? Math.abs(value.balance) : value.balance;
+    }
   }
   return found ? total : null;
 }
@@ -217,6 +232,7 @@ function MetricCard({
   primary = false,
   absolute = false,
   note,
+  onExplore,
 }: {
   label: string;
   value: number | null;
@@ -224,11 +240,16 @@ function MetricCard({
   primary?: boolean;
   absolute?: boolean;
   note?: string;
+  onExplore: () => void;
 }) {
   return (
-    <article className={primary
-      ? 'relative col-span-2 overflow-hidden rounded-[1.35rem] bg-[linear-gradient(145deg,#17293c_0%,#22465a_100%)] p-4 text-white shadow-[0_16px_35px_rgb(23_41_60/0.18)] sm:p-5 lg:col-span-2'
-      : 'rounded-[1.35rem] border border-border bg-card p-4 shadow-[0_10px_28px_rgb(43_75_84/0.06)] sm:p-5'}>
+    <button
+      type="button"
+      onClick={onExplore}
+      className={primary
+        ? 'relative col-span-2 overflow-hidden rounded-[1.35rem] bg-[linear-gradient(145deg,#17293c_0%,#22465a_100%)] p-4 text-left text-white shadow-[0_16px_35px_rgb(23_41_60/0.18)] transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5 lg:col-span-2'
+        : 'rounded-[1.35rem] border border-border bg-card p-4 text-left shadow-[0_10px_28px_rgb(43_75_84/0.06)] transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5'}
+    >
       {primary && <div className="pointer-events-none absolute -right-8 -top-10 size-40 rounded-full bg-white/7 blur-2xl" />}
       <p className={`text-[10px] font-semibold uppercase tracking-[0.13em] ${primary ? 'text-white/55' : 'text-muted-foreground'}`}>{label}</p>
       <p className="mt-2 font-heading text-[clamp(1.45rem,4vw,2.35rem)] font-semibold leading-none tracking-[-0.055em] tabular-nums">
@@ -236,7 +257,8 @@ function MetricCard({
       </p>
       <p className="mt-3 text-[11px] sm:text-xs"><Delta value={delta} dark={primary} /></p>
       {note && <p className={`mt-1 text-[10px] ${primary ? 'text-white/45' : 'text-muted-foreground'}`}>{note}</p>}
-    </article>
+      <span className="sr-only">Open details</span>
+    </button>
   );
 }
 
@@ -314,7 +336,13 @@ function FinanceHeader({
   );
 }
 
-function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplore: (group: string) => void }) {
+function Overview({
+  data,
+  onExplore,
+}: {
+  data: FinanceDashboardResponse;
+  onExplore: (group: string, metric?: AggregateMetric) => void;
+}) {
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>('dd');
   const latest = data.summary.rows.at(-1) ?? null;
   const kindByGroup = new Map(data.categories.map((category) => [category.summaryGroup, category.balanceKind]));
@@ -392,9 +420,10 @@ function Overview({ data, onExplore }: { data: FinanceDashboardResponse; onExplo
           delta={baselineDate !== null && trackedBalance !== null && baselineTrackedBalance !== null ? trackedBalance - baselineTrackedBalance : null}
           primary
           note="Recorded assets less recorded liabilities; not a net-worth estimate."
+          onExplore={() => onExplore('all', 'net')}
         />
-        <MetricCard label="Tracked assets" value={assets} delta={baselineAssetDate !== null && assets !== null && baselineAssets !== null ? assets - baselineAssets : null} />
-        <MetricCard label="Debt owed" value={debtOwed} delta={baselineDebtDate !== null && debtOwed !== null && baselineDebtOwed !== null ? debtOwed - baselineDebtOwed : null} />
+        <MetricCard label="Tracked assets" value={assets} delta={baselineAssetDate !== null && assets !== null && baselineAssets !== null ? assets - baselineAssets : null} onExplore={() => onExplore('all', 'assets')} />
+        <MetricCard label="Debt owed" value={debtOwed} delta={baselineDebtDate !== null && debtOwed !== null && baselineDebtOwed !== null ? debtOwed - baselineDebtOwed : null} onExplore={() => onExplore('all', 'debt')} />
       </section>
 
       <div className="mb-2 mt-4 flex items-end justify-between gap-3 sm:mt-5">
@@ -521,10 +550,42 @@ function accountMeta(account: HistoryAccount) {
     .join(' · ');
 }
 
-function coverageSignature(data: FinanceDashboardResponse, date: string, group: string) {
+function trendValue(
+  data: FinanceDashboardResponse,
+  row: FinanceRow | undefined,
+  group: string,
+  metric: HistoryTrendMetric,
+) {
+  if (!row) return null;
+  if (metric === 'assets') return aggregateKindValue(data, row.date, 'asset');
+  if (metric === 'debt') return aggregateKindValue(data, row.date, 'debt');
+  if (metric === 'net') return valueForGroup(data, row, 'all');
+  return valueForGroup(data, row, group);
+}
+
+function trendHasObservation(
+  data: FinanceDashboardResponse,
+  date: string,
+  group: string,
+  metric: HistoryTrendMetric,
+) {
+  if (metric === 'assets') return observedAccounts(data, date, undefined, 'asset').size > 0;
+  if (metric === 'debt') return observedAccounts(data, date, undefined, 'debt').size > 0;
+  if (metric === 'net') return observedAccounts(data, date).size > 0;
+  return observedAccounts(data, date, group).size > 0;
+}
+
+function coverageSignature(
+  data: FinanceDashboardResponse,
+  date: string,
+  group: string,
+  metric: HistoryTrendMetric,
+) {
   const entries = new Set<string>();
   for (const category of data.categories) {
-    if (group !== 'all' && category.summaryGroup !== group) continue;
+    if (metric === 'assets' && category.balanceKind !== 'asset') continue;
+    if (metric === 'debt' && category.balanceKind !== 'debt') continue;
+    if (metric === 'group' && category.summaryGroup !== group) continue;
     const row = category.rows.find((item) => item.date === date);
     for (const account of category.accounts) {
       if (row?.values[account.id]) entries.add(`${account.id}:${category.balanceKind}`);
@@ -551,7 +612,7 @@ function historyPeriodLabel(key: string, cadence: ChartCadence) {
 function buildPeriodSeries(
   data: FinanceDashboardResponse,
   group: string,
-  debt: boolean,
+  metric: HistoryTrendMetric,
   dates: string[],
   cadence: ChartCadence,
   from: string,
@@ -562,7 +623,7 @@ function buildPeriodSeries(
     firstHistoryDates(
       dates,
       cadence,
-      (date) => group === 'all' || observedAccounts(data, date, group).size > 0,
+      (date) => trendHasObservation(data, date, group, metric),
     ).map((date) => [historyPeriodKey(date, cadence), date]),
   );
 
@@ -587,15 +648,14 @@ function buildPeriodSeries(
         : String(cursor.getUTCFullYear());
     const date = reportByPeriod.get(key) ?? null;
     const row = date ? data.summary.rows.find((item) => item.date === date) : undefined;
-    const rawValue = valueForGroup(data, row, group);
-    const value = rawValue === null || !debt ? rawValue : Math.abs(rawValue);
+    const value = trendValue(data, row, group, metric);
     points.push({
       key,
       label: historyPeriodLabel(key, cadence),
       date,
       value,
       reported: date !== null,
-      coverageKey: date ? coverageSignature(data, date, group) : null,
+      coverageKey: date ? coverageSignature(data, date, group, metric) : null,
       coverageBreak: false,
       segment: null,
     });
@@ -633,26 +693,33 @@ function HistoryTrend({
   data,
   selectedGroup,
   selectedName,
-  debt,
+  metric,
   dates,
   from,
   to,
   cadence,
   onCadenceChange,
+  anchorId,
+  showIntervalControl = true,
 }: {
   data: FinanceDashboardResponse;
   selectedGroup: string;
   selectedName: string;
-  debt: boolean;
+  metric: HistoryTrendMetric;
   dates: string[];
   from: string;
   to: string;
   cadence: ChartCadence;
   onCadenceChange: (cadence: ChartCadence) => void;
+  anchorId?: string;
+  showIntervalControl?: boolean;
 }) {
+  const instanceId = useId().replaceAll(':', '');
+  const titleId = `history-trend-title-${instanceId}`;
+  const fillId = `finance-history-fill-${instanceId}`;
   const series = useMemo(
-    () => buildPeriodSeries(data, selectedGroup, debt, dates, cadence, from, to),
-    [data, selectedGroup, debt, dates, cadence, from, to],
+    () => buildPeriodSeries(data, selectedGroup, metric, dates, cadence, from, to),
+    [data, selectedGroup, metric, dates, cadence, from, to],
   );
   const segmentIds = useMemo(
     () => Array.from(new Set(series.flatMap((point) => point.segment === null ? [] : [point.segment]))),
@@ -673,32 +740,32 @@ function HistoryTrend({
     [series],
   );
   const relevantDates = useMemo(
-    () => selectedGroup === 'all' ? dates : dates.filter((date) => observedAccounts(data, date, selectedGroup).size > 0),
-    [data, dates, selectedGroup],
+    () => dates.filter((date) => trendHasObservation(data, date, selectedGroup, metric)),
+    [data, dates, metric, selectedGroup],
   );
   const latestDate = relevantDates.at(-1) ?? null;
   const latestRow = latestDate ? data.summary.rows.find((row) => row.date === latestDate) : undefined;
-  const latestRaw = valueForGroup(data, latestRow, selectedGroup);
-  const latestValue = latestRaw === null || !debt ? latestRaw : Math.abs(latestRaw);
+  const latestValue = trendValue(data, latestRow, selectedGroup, metric);
   const gapCount = series.filter((point) => !point.reported).length;
   const coverageBreakCount = series.filter((point) => point.coverageBreak).length;
   const unavailableCount = series.filter((point) => point.reported && point.value === null && !point.coverageBreak).length;
   const reportCount = series.length - gapCount;
   const plottedCount = series.filter((point) => point.value !== null).length;
+  const trendColor = metric === 'assets' ? '#347b63' : metric === 'debt' ? '#a6634c' : '#2e7484';
   const chartConfig = {
-    value: { label: selectedName, color: '#2e7484' },
+    value: { label: selectedName, color: trendColor },
   } satisfies ChartConfig;
   const unit = cadence === 'daily' ? 'day' : cadence === 'monthly' ? 'month' : 'year';
   const cadenceDescription = cadence === 'daily' ? 'Reported balance by day' : `First available balance in each ${unit}`;
 
   return (
-    <section className="rounded-[1.25rem] border border-border bg-card p-4 shadow-[0_10px_30px_rgb(43_75_84/0.06)] sm:p-5" aria-labelledby="history-trend-title">
+    <section id={anchorId} tabIndex={-1} className="scroll-mt-3 rounded-[1.25rem] border border-border bg-card p-4 shadow-[0_10px_30px_rgb(43_75_84/0.06)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-5" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="grid size-8 place-items-center rounded-xl bg-primary/10 text-primary"><ChartNoAxesCombined className="size-4" aria-hidden="true" /></span>
             <div>
-              <h2 id="history-trend-title" className="font-heading text-sm font-semibold sm:text-base">{selectedName} over time</h2>
+              <h2 id={titleId} className="font-heading text-sm font-semibold sm:text-base">{selectedName} over time</h2>
               <p className="text-[10px] text-muted-foreground sm:text-xs">{cadenceDescription}</p>
             </div>
           </div>
@@ -709,22 +776,24 @@ function HistoryTrend({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">Chart interval</p>
-        <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Chart interval">
-          {(['daily', 'monthly', 'annual'] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-pressed={cadence === item}
-              onClick={() => onCadenceChange(item)}
-              className={`min-h-11 rounded-lg px-3 text-xs font-semibold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${cadence === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              {item === 'daily' ? 'Daily' : item === 'monthly' ? 'Monthly' : 'Annual'}
-            </button>
-          ))}
+      {showIntervalControl ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">Chart interval{selectedGroup === 'all' ? ' · all charts' : ''}</p>
+          <div className="inline-flex rounded-xl bg-muted p-1" aria-label="Chart interval">
+            {(['daily', 'monthly', 'annual'] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={cadence === item}
+                onClick={() => onCadenceChange(item)}
+                className={`min-h-11 rounded-lg px-3 text-xs font-semibold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 ${cadence === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {item === 'daily' ? 'Daily' : item === 'monthly' ? 'Monthly' : 'Annual'}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : <div className="mt-3 border-t border-border" />}
 
       {plottedCount > 0 ? (
         <ChartContainer config={chartConfig} className="mt-2 h-[180px] w-full aspect-auto sm:h-[210px]" aria-label={`${selectedName} ${cadence} balance history`}>
@@ -736,7 +805,7 @@ function HistoryTrend({
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           >
             <defs>
-              <linearGradient id="finance-history-fill" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.28} />
                 <stop offset="95%" stopColor="var(--color-value)" stopOpacity={0.02} />
               </linearGradient>
@@ -766,7 +835,7 @@ function HistoryTrend({
                 type="monotone"
                 stroke="var(--color-value)"
                 strokeWidth={2.25}
-                fill="url(#finance-history-fill)"
+                fill={`url(#${fillId})`}
                 connectNulls={false}
                 dot={plottedCount <= 24 || segmentSizes.get(segmentId) === 1 ? { r: 3 } : false}
                 activeDot={{ r: 4 }}
@@ -907,10 +976,14 @@ function HistoryWorkspace({
   data,
   selectedGroup,
   onSelectedGroupChange,
+  focusMetric,
+  onFocusHandled,
 }: {
   data: FinanceDashboardResponse;
   selectedGroup: string;
   onSelectedGroupChange: (group: string) => void;
+  focusMetric: AggregateMetric | null;
+  onFocusHandled: () => void;
 }) {
   const [page, setPage] = useState(0);
   const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
@@ -924,8 +997,7 @@ function HistoryWorkspace({
   const pageSize = pageSizeOverride ?? (isMobile ? 5 : 10);
   const selectedColumn = data.summary.columns.find((column) => column.id === selectedGroup);
   const safeGroup = selectedGroup === 'all' || selectedColumn ? selectedGroup : 'all';
-  const selectedName = safeGroup === 'all' ? 'Tracked balance' : titleCase(selectedColumn?.name ?? safeGroup);
-  const selectedKind = data.categories.find((category) => category.summaryGroup === safeGroup)?.balanceKind ?? 'asset';
+  const selectedName = safeGroup === 'all' ? 'All balances' : titleCase(selectedColumn?.name ?? safeGroup);
   const { from: minDate, to: maxDate } = historyDateRange(data.dates, 'all');
   const { from, to } = historyDateRange(data.dates, rangePreset, { from: customFrom, to: customTo });
   const filteredDates = useMemo(
@@ -956,9 +1028,24 @@ function HistoryWorkspace({
     ? 'Exact balances, newest first'
     : `First available snapshot in each ${cadence === 'monthly' ? 'month' : 'year'}, newest first`;
 
+  useEffect(() => {
+    if (safeGroup !== 'all' || !focusMetric) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`finance-trend-${focusMetric}`);
+      if (target instanceof HTMLElement) {
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      onFocusHandled();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusMetric, onFocusHandled, safeGroup]);
+
   function changeGroup(group: string | null) {
     if (!group) return;
+    onFocusHandled();
     onSelectedGroupChange(group);
+    window.history.replaceState(null, '', '#finance/details');
     setPage(0);
   }
 
@@ -1005,7 +1092,7 @@ function HistoryWorkspace({
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="start">
-              <SelectItem value="all">Tracked balance</SelectItem>
+              <SelectItem value="all">All balances</SelectItem>
               {data.summary.columns.map((column) => <SelectItem key={column.id} value={column.id}>{titleCase(column.name)}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -1053,7 +1140,62 @@ function HistoryWorkspace({
         </div>
       </div>
 
-      <HistoryTrend data={data} selectedGroup={safeGroup} selectedName={selectedName} debt={selectedKind === 'debt'} dates={filteredDates} from={from} to={to} cadence={cadence} onCadenceChange={changeCadence} />
+      {safeGroup === 'all' ? (
+        <div className="space-y-3">
+          <HistoryTrend
+            data={data}
+            selectedGroup="all"
+            selectedName="Net balance"
+            metric="net"
+            dates={filteredDates}
+            from={from}
+            to={to}
+            cadence={cadence}
+            onCadenceChange={changeCadence}
+            anchorId="finance-trend-net"
+          />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <HistoryTrend
+              data={data}
+              selectedGroup="all"
+              selectedName="Tracked assets"
+              metric="assets"
+              dates={filteredDates}
+              from={from}
+              to={to}
+              cadence={cadence}
+              onCadenceChange={changeCadence}
+              anchorId="finance-trend-assets"
+              showIntervalControl={false}
+            />
+            <HistoryTrend
+              data={data}
+              selectedGroup="all"
+              selectedName="Debt owed"
+              metric="debt"
+              dates={filteredDates}
+              from={from}
+              to={to}
+              cadence={cadence}
+              onCadenceChange={changeCadence}
+              anchorId="finance-trend-debt"
+              showIntervalControl={false}
+            />
+          </div>
+        </div>
+      ) : (
+        <HistoryTrend
+          data={data}
+          selectedGroup={safeGroup}
+          selectedName={selectedName}
+          metric="group"
+          dates={filteredDates}
+          from={from}
+          to={to}
+          cadence={cadence}
+          onCadenceChange={changeCadence}
+        />
+      )}
 
       <div className="mb-2 mt-4 flex items-center justify-between gap-4 sm:mt-5">
         <div>
@@ -1106,11 +1248,18 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [view, setView] = useState<FinanceView>('overview');
   const [selectedGroup, setSelectedGroup] = useState('all');
+  const [focusMetric, setFocusMetric] = useState<AggregateMetric | null>(null);
+  const clearFocusMetric = useCallback(() => setFocusMetric(null), []);
 
   useEffect(() => {
     const syncView = () => {
-      const detailsView = window.location.hash === '#finance/details' || window.location.hash === '#finance/history';
+      const metric = aggregateMetricFromHash(window.location.hash);
+      const detailsView = window.location.hash === '#finance/details'
+        || window.location.hash === '#finance/history'
+        || metric !== null;
       setView(detailsView ? 'history' : 'overview');
+      setFocusMetric(metric);
+      if (metric) setSelectedGroup('all');
       if (window.location.hash === '#finance/history') {
         window.history.replaceState(null, '', '#finance/details');
       }
@@ -1138,14 +1287,21 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
     return () => controller.abort();
   }, [refreshToken]);
 
-  function changeView(nextView: FinanceView) {
+  function changeView(nextView: FinanceView, metric?: AggregateMetric) {
     setView(nextView);
-    window.history.replaceState(null, '', nextView === 'overview' ? '#finance' : '#finance/details');
+    if (nextView === 'overview') setFocusMetric(null);
+    const nextHash = nextView === 'overview'
+      ? '#finance'
+      : metric
+        ? `#finance/details/${metric}`
+        : '#finance/details';
+    window.history.replaceState(null, '', nextHash);
   }
 
-  function exploreGroup(group: string) {
+  function exploreGroup(group: string, metric?: AggregateMetric) {
     setSelectedGroup(group);
-    changeView('history');
+    setFocusMetric(metric ?? null);
+    changeView('history', metric);
   }
 
   if (status === 'loading' && !data) {
@@ -1176,7 +1332,7 @@ export function FinanceDashboard({ refreshToken }: { refreshToken: number }) {
       {status === 'error' && <p aria-live="polite" className="mb-2 rounded-lg bg-destructive/8 px-3 py-2 text-[11px] text-destructive">Refresh failed. Showing the last finance data loaded on this device.</p>}
       {view === 'overview'
         ? <Overview data={data} onExplore={exploreGroup} />
-        : <HistoryWorkspace data={data} selectedGroup={selectedGroup} onSelectedGroupChange={setSelectedGroup} />}
+        : <HistoryWorkspace data={data} selectedGroup={selectedGroup} onSelectedGroupChange={setSelectedGroup} focusMetric={focusMetric} onFocusHandled={clearFocusMetric} />}
     </div>
   );
 }
